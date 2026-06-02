@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Conda
+.conda/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Benchmark outputs & checkpoints (scoped, so repo config JSON stays tracked)
+outputs/
+demo/
+results.json
+results_whisperx.json
+
+# Datasets & audio
+datasets/
+meeting_datasets/
+hf_ami_cache/
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.mp4
+*.stm
+*.rttm
+
+# Model weights
+models/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+*.gguf
+
+# HuggingFace cache
+.cache/huggingface/
+
+# Secrets
+.env
+*.env
+.env.*
+hf_token.txt
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
