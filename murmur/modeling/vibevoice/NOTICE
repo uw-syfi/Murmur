@@ -1,0 +1,20 @@
+Third-party code: VibeVoice
+===========================
+
+The Python modules in this directory (murmur/modeling/vibevoice/) are vendored
+and adapted from the VibeVoice project by Microsoft, used under the MIT License.
+The upstream copyright notice and license text are preserved in the LICENSE file
+in this directory.
+
+    Upstream: https://github.com/microsoft/VibeVoice
+    License:  MIT (Copyright (c) 2025 Microsoft)
+
+Modifications made for Murmur:
+  - Only the ASR-related model, configuration, tokenizer, and processor modules
+    are included — a subset of the upstream package (the streaming/TTS diffusion
+    path is omitted).
+  - Files were adapted to integrate with the Murmur inference engine and its
+    KV-cache eviction policies.
+
+These modifications are distributed under Murmur's MIT License (see the LICENSE
+file at the repository root).

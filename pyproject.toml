@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "murmur"
+version = "0.1.0"
+description = "An efficient inference system for long-form ASR (local chunked inference + benchmarking for VibeVoice ASR)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "torch",
+    "torchaudio",
+    # >=4.50 for the Cache / CacheLayerMixin API used by murmur.inference.kv_cache
+    "transformers>=4.50",
+    "numpy",
+    "soundfile",
+    "jiwer",
+    "datasets",
+    "meeteval",
+    "pyannote.metrics",
+]
+
+[project.optional-dependencies]
+# Extra backend used only by benchmarks/benchmark_whisperx.py
+whisperx = ["whisperx"]
+# CPU-only test deps (no model download / GPU); see tests/ and CI.
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["murmur*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
