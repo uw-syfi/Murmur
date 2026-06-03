@@ -65,6 +65,20 @@ Common options:
 | `--output_dir` | Where transcripts and results are written | `./outputs/benchmark` |
 | `--hf_token` | Hugging Face token (for gated datasets) | — |
 
+## Citation
+
+If you find Murmur useful in your research, please consider citing:
+
+```bibtex
+@article{murmur2026lee,
+  title={MURMUR: An Efficient Inference System for Long-Form ASR},
+  author={Lee, Wei-Tzu and Kamahori, Keisuke and Kasikci, Baris},
+  journal={arXiv preprint arXiv:2606.01483},
+  year={2026},
+  url={https://arxiv.org/abs/2606.01483}
+}
+```
+
 ## Acknowledgements
 
 `murmur/modeling/vibevoice/` contains code vendored and adapted from Microsoft's
