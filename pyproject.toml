@@ -4,32 +4,41 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "murmur"
-version = "0.1.0"
-description = "An efficient inference system for long-form ASR (local chunked inference + benchmarking for VibeVoice ASR)."
+version = "0.2.0"
+description = "Efficient long-context ASR inference with hierarchical chunking (target chunks + draft windows on vLLM)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
+# Client side (the vLLM server runs in its own environment; see README).
 dependencies = [
+    "numpy",
+    "requests",
+    "scipy",
+    "soundfile",
     "torch",
     "torchaudio",
-    # >=4.50 for the Cache / CacheLayerMixin API used by murmur.inference.kv_cache
-    "transformers>=4.50",
-    "numpy",
-    "soundfile",
-    "jiwer",
-    "datasets",
-    "meeteval",
-    "pyannote.metrics",
 ]
 
 [project.optional-dependencies]
-# Extra backend used only by benchmarks/benchmark_whisperx.py
-whisperx = ["whisperx"]
-# CPU-only test deps (no model download / GPU); see tests/ and CI.
-test = ["pytest"]
+# Diarization for chunk boundaries and cross-chunk speaker linking.
+diarize = ["pyannote.audio>=4.0"]
+# Draft windows (short-window ASR drafts).
+drafts = ["faster-whisper>=1.0", "opencc"]
+# Scoring (benchmarks).
+eval = ["jiwer", "meeteval", "pyannote.metrics"]
+all = ["murmur[diarize,drafts,eval]"]
+# Server side: only what the drafter plugin needs inside the vLLM process.
+server = ["transformers"]
+test = ["pytest", "jiwer"]
+
+[project.scripts]
+murmur = "murmur.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["murmur*"]
+
+[tool.setuptools.package-data]
+"murmur.drafting" = ["_vllm_site/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
