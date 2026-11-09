@@ -20,7 +20,7 @@ changing what they write:
 ## Demo
 
 WhisperX, VibeVoice-ASR single pass and Murmur (VibeVoice-ASR) on the same 32-minute AMI meeting
-(IS1009d), one H100, replayed at 6x. Each transcript and its scores appear only once that system has
+(IS1009d), one H100, replayed at 12x. Each transcript and its scores appear only once that system has
 finished. Click the image to play the video.
 
 [![Murmur demo](./docs/media/murmur_demo_poster.jpg)](./docs/media/murmur_demo.mp4)
