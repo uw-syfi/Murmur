@@ -2,6 +2,9 @@
 
 [![arXiv](https://img.shields.io/badge/arXiv-2606.01483-b31b1b.svg)](https://arxiv.org/abs/2606.01483)
 
+**News**
+- 2026/11/04: [Preprint v2](https://arxiv.org/abs/2606.01483v2) is out.
+
 Long-context ASR models such as **VibeVoice-ASR** and **MOSS-Transcribe-Diarize** transcribe an
 hour-long meeting in one pass, with speakers and timestamps. That single pass is slow, and one
 repetition loop can wipe out the whole transcript. Murmur makes these models faster without
@@ -20,8 +23,9 @@ changing what they write:
 ## Demo
 
 WhisperX, VibeVoice-ASR single pass and Murmur (VibeVoice-ASR) on the same 32-minute AMI meeting
-(IS1009d), one H100, replayed at 12x. Each transcript and its scores appear only once that system has
-finished. Click the image to play the video.
+(IS1009d), one H100, replayed at 8x. Transcripts stream as they are generated and scores appear once
+each system has finished. WhisperX runs at batch 8 here, like Murmur (the tables below use its default
+batch 16, about 2.5 s faster on this meeting). Click the image to play the video.
 
 [![Murmur demo](./docs/media/murmur_demo_poster.jpg)](./docs/media/murmur_demo.mp4)
 
