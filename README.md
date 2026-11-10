@@ -83,6 +83,18 @@ once. Murmur: target chunks + draft windows for VibeVoice-ASR, target chunks for
 AMI scores use a corrected reference reader; the first arXiv versions report AMI error rates 2-6 points
 higher for every system.</sub>
 
+## Supported models
+
+| Model | `Murmur.load(...)` | Size | Draft windows (default) | vLLM server |
+|---|---|---|---|---|
+| [VibeVoice-ASR](https://huggingface.co/microsoft/VibeVoice-ASR) | `"vibevoice"` | 8.5B (7B decoder) | on | vLLM 0.14 + VibeVoice plugin |
+| [MOSS-Transcribe-Diarize](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize) | `"moss"` | 0.9B (0.6B decoder) | off | vLLM nightly |
+
+Both models write speakers and timestamps themselves; Murmur links speakers across chunks with
+pyannote. Tested on English and Mandarin meetings (`language="en"` or `"zh"`). Each model is one
+client class in `murmur/models/` (request format, output parsing and server flags), so adding a
+model means adding a class there.
+
 ## Install
 
 The client and each model's vLLM server live in separate environments, because the two models need
