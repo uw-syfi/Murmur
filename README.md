@@ -32,7 +32,7 @@ batch 16, about 2.5 s faster on this meeting). Click the image to play the video
 ## Results
 
 On average Murmur is 2.5x faster than single pass (2.0-2.9x) and lowers tcpWER by 2.0 points. It
-beats WhisperX on tcpWER on every dataset, at about the same latency with VibeVoice-ASR and lower
+beats WhisperX on tcpWER on every dataset, at about the same latency with VibeVoice-ASR on English meetings and lower
 latency with MOSS-Transcribe-Diarize. One NVIDIA H100, vLLM; latency includes diarization.
 
 **AMI-IHM** (English, headset mics, 16 meetings)
