@@ -4,182 +4,139 @@
 
 **News**
 - 2026/11/04: [Preprint v2](https://arxiv.org/abs/2606.01483v2) is out.
+- 2026/06/01: [Preprint](https://arxiv.org/abs/2606.01483v1) is released on arXiv.
 
-Long-context ASR models such as **VibeVoice-ASR** and **MOSS-Transcribe-Diarize** transcribe an
-hour-long meeting in one pass, with speakers and timestamps. That single pass is slow, and one
-repetition loop can wipe out the whole transcript. Murmur makes these models faster without
-changing what they write:
+Murmur is an inference system that serves long-context ASR models, such as **VibeVoice-ASR** and
+**MOSS-Transcribe-Diarize**, on long audio. These models transcribe an hour-long recording in a single
+pass, which is slow and can fail entirely on a repetition loop.
 
-- **Target chunks (~5 min).** A few minutes of context is enough: 330 s chunks match or beat
-  single-pass accuracy, confine a repetition loop to one chunk, and decode in parallel.
-- **Draft windows (30 s).** A small short-window ASR (Whisper-tiny/small) transcribes each chunk;
-  its words, simple format rules for timestamps and speaker tags, and the model's own output become
-  drafts for speculative decoding. The model verifies every token, so the output is its own greedy
-  output. Murmur enables draft windows when a decoding step is expensive (VibeVoice-ASR's 7B decoder),
-  not for small decoders (MOSS-Transcribe-Diarize's 0.6B).
+- **Across chunks:** Murmur decodes ~5-minute target chunks in parallel. This intermediate size gives
+  the model enough context to match single pass in most cases, and a loop costs at most one chunk.
+- **Within each chunk:** hierarchical chunking splits each chunk into 30 s draft windows. A small
+  Whisper model transcribes them, and structure-aware drafting adds the timestamps and speaker tags,
+  giving drafts for speculative decoding. The long-context model verifies every token, so decoding is
+  faster and the output is unchanged.
+
+Overall, Murmur is **2.5x faster** than single pass on average (2.0-2.9x), end to end including
+diarization, and lowers tcpWER by 2.0 points on average.
 
 ![Hierarchical chunking](./docs/figures/hierarchy.png)
 
 ## Demo
 
-WhisperX, VibeVoice-ASR single pass and Murmur (VibeVoice-ASR) on the same 32-minute AMI meeting
-(IS1009d), one H100, replayed at 8x. Transcripts stream as they are generated and scores appear once
-each system has finished. WhisperX runs at batch 8 here, like Murmur (the tables below use its default
-batch 16, about 2.5 s faster on this meeting). Click the image to play the video.
+Single pass, Murmur and WhisperX transcribing the same 32-minute AMI meeting on one H100, replayed at 8x.
 
-[![Murmur demo](./docs/media/murmur_demo_v2_poster.jpg)](./docs/media/murmur_demo_v2.mp4)
+https://github.com/user-attachments/assets/e2897c2a-cc33-4021-8e2d-7dfbac46f8c9
 
 ## Results
 
-On average Murmur is 2.5x faster than single pass (2.0-2.9x) and lowers tcpWER by 2.0 points. It
-beats WhisperX on tcpWER on every dataset, at about the same latency with VibeVoice-ASR on English meetings and lower
-latency with MOSS-Transcribe-Diarize. One NVIDIA H100, vLLM; latency includes diarization.
+Murmur against each model's own single pass on four meeting datasets. Each cell is tcpWER / latency
+per recording (lower is better), on one H100 with vLLM, with latency including diarization.
 
-**AMI-IHM** (English, headset mics, 16 meetings)
+| Model | System | AMI-IHM | AMI-SDM | AliMeeting | AISHELL-4 |
+|---|---|---|---|---|---|
+| VibeVoice-ASR | single pass | 30.1% / 109 s | 39.6% / 100 s | 41.7% / 123 s | **30.3%** / 111 s |
+| | **Murmur** | **24.5% / 38 s** | **32.9% / 39 s** | **38.7% / 47 s** | 30.5% / **46 s** |
+| MOSS-Transcribe-Diarize | single pass | 17.5% / 54 s | 29.6% / 77 s | **13.6%** / 91 s | **14.1%** / 51 s |
+| | **Murmur** | **17.3% / 26 s** | **22.8% / 26 s** | 17.5% / **32 s** | 16.6% / **26 s** |
 
-| System | WER (%) | tcpWER (%) | Latency (s) |
-|---|--:|--:|--:|
-| WhisperX | 24.6 | 31.9 | 36.3 |
-| VibeVoice-ASR, single pass | 27.8 | 30.1 | 108.9 |
-| VibeVoice-ASR + **Murmur** | **20.2** | **24.5** | **38.0** |
-| MOSS-Transcribe-Diarize, single pass | 19.4 | 17.5 | 54.2 |
-| MOSS-Transcribe-Diarize + **Murmur** | **17.5** | **17.3** | **26.4** |
-
-**AMI-SDM** (English, one distant mic, 16 meetings)
-
-| System | WER (%) | tcpWER (%) | Latency (s) |
-|---|--:|--:|--:|
-| WhisperX | 30.2 | 39.6 | 35.0 |
-| VibeVoice-ASR, single pass | 27.9 | 39.6 | 99.5 |
-| VibeVoice-ASR + **Murmur** | **26.8** | **32.9** | **38.5** |
-| MOSS-Transcribe-Diarize, single pass | 24.7 | 29.6 | 77.1 |
-| MOSS-Transcribe-Diarize + **Murmur** | **20.5** | **22.8** | **26.4** |
-
-**AliMeeting** (Mandarin, 28 meetings)
-
-| System | CER (%) | tcpWER (%) | Latency (s) |
-|---|--:|--:|--:|
-| WhisperX | 33.3 | 68.6 | 36.4 |
-| VibeVoice-ASR, single pass | 40.3 | 41.7 | 122.5 |
-| VibeVoice-ASR + **Murmur** | **34.1** | **38.7** | **47.1** |
-| MOSS-Transcribe-Diarize, single pass | **16.8** | **13.6** | 90.8 |
-| MOSS-Transcribe-Diarize + **Murmur** | 17.4 | 17.5 | **31.6** |
-
-**AISHELL-4** (Mandarin, 20 meetings)
-
-| System | CER (%) | tcpWER (%) | Latency (s) |
-|---|--:|--:|--:|
-| WhisperX | 26.2 | 40.5 | 42.4 |
-| VibeVoice-ASR, single pass | 25.0 | **30.3** | 110.9 |
-| VibeVoice-ASR + **Murmur** | **22.6** | 30.5 | **45.6** |
-| MOSS-Transcribe-Diarize, single pass | **14.0** | **14.1** | 50.8 |
-| MOSS-Transcribe-Diarize + **Murmur** | 14.3 | 16.6 | **26.1** |
-
-Lower is better. Bold marks the better of single pass and Murmur for each model. MOSS-Transcribe-Diarize's
-single pass stays ahead on Mandarin speaker attribution, since it diarizes the whole recording jointly.
-
-<sub>WhisperX: 30 s windows with Whisper large-v3 and pyannote. Single pass: the whole recording at
-once. Murmur: target chunks + draft windows for VibeVoice-ASR, target chunks for MOSS-Transcribe-Diarize.
-AMI scores use a corrected reference reader; the first arXiv versions report AMI error rates 2-6 points
-higher for every system.</sub>
+<sub>Bold: better of single pass and Murmur. WER, cpWER and DER are in the paper. AMI scores use a
+corrected reference reader (2-6 points lower than earlier arXiv versions).</sub>
 
 ## Supported models
 
-| Model | `Murmur.load(...)` | Size | Draft windows (default) | vLLM server |
-|---|---|---|---|---|
-| [VibeVoice-ASR](https://huggingface.co/microsoft/VibeVoice-ASR) | `"vibevoice"` | 8.5B (7B decoder) | on | vLLM 0.14 + VibeVoice plugin |
-| [MOSS-Transcribe-Diarize](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize) | `"moss"` | 0.9B (0.6B decoder) | off | vLLM nightly |
+Murmur runs each model on its own vLLM server and talks to it through a small client class.
 
-Both models write speakers and timestamps themselves; Murmur links speakers across chunks with
-pyannote. Tested on English and Mandarin meetings (`language="en"` or `"zh"`). Each model is one
-client class in `murmur/models/` (request format, output parsing and server flags), so adding a
-model means adding a class there.
+| Model | `Murmur.load(...)` | Draft windows | vLLM server |
+|---|---|---|---|
+| [VibeVoice-ASR](https://huggingface.co/microsoft/VibeVoice-ASR) (8.5B) | `"vibevoice"` | on | vLLM 0.14 + VibeVoice plugin |
+| [MOSS-Transcribe-Diarize](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize) (0.9B) | `"moss"` | off | vLLM nightly |
+
+Both are tested on English and Mandarin. To add a model, add a client class in `murmur/models/`.
 
 ## Install
 
-The client and each model's vLLM server live in separate environments, because the two models need
-different vLLM builds.
+The `murmur` client and each model's vLLM server use separate environments, because the two models
+need different vLLM builds.
 
-**Client** (the `murmur` package):
 ```bash
 conda create -n murmur python=3.10 -y && conda activate murmur
 git clone https://github.com/uw-syfi/Murmur.git && cd Murmur
-pip install -e ".[all]"            # diarization (pyannote), draft windows (faster-whisper), scoring
-huggingface-cli login              # pyannote/speaker-diarization-3.1 is gated: accept its terms first
+pip install -e ".[all]"
+huggingface-cli login   # accept the terms of pyannote/speaker-diarization-3.1 first
 ```
 
-**VibeVoice-ASR server** (vLLM 0.14 + the VibeVoice vLLM plugin):
+<details>
+<summary>vLLM servers (VibeVoice-ASR, MOSS-Transcribe-Diarize)</summary>
+
 ```bash
+# VibeVoice-ASR: vLLM 0.14 + the VibeVoice plugin
 conda create -n vibevoice-vllm python=3.10 -y && conda activate vibevoice-vllm
 pip install vllm==0.14.0
 git clone https://github.com/microsoft/VibeVoice.git && pip install -e VibeVoice
-pip install -e "path/to/Murmur[server]"   # the drafter plugin
-```
-
-**MOSS-Transcribe-Diarize server** (a vLLM nightly with the model's code):
-```bash
-conda create -n moss-vllm python=3.10 -y && conda activate moss-vllm
-pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly   # tested: 0.23.1rc1.dev949
 pip install -e "path/to/Murmur[server]"
-```
 
-Tell the client where each server's `vllm` is, so it can start servers itself:
-```bash
+# MOSS-Transcribe-Diarize: vLLM nightly (tested: 0.23.1rc1.dev949)
+conda create -n moss-vllm python=3.10 -y && conda activate moss-vllm
+pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly
+pip install -e "path/to/Murmur[server]"
+
+# so the client can start the servers itself
 export MURMUR_VLLM_VIBEVOICE=$CONDA_PREFIX/../vibevoice-vllm/bin/vllm
 export MURMUR_VLLM_MOSS=$CONDA_PREFIX/../moss-vllm/bin/vllm
 ```
+</details>
 
-## Quick start
+## Usage
+
+`Murmur.load` starts the model's vLLM server, and `transcribe` returns segments with speakers and
+timestamps.
 
 ```python
 from murmur import Murmur
 
-with Murmur.load("vibevoice") as m:          # starts a vLLM server on a free port
-    t = m.transcribe("meeting.wav")
-    print(t)                                  # [  12.40-  15.10] SPEAKER_01: ...
-    for s in t.segments:
-        print(s.speaker, s.start, s.end, s.text)
-
-m = Murmur.load("moss", language="zh")       # Mandarin; MOSS uses target chunks only by default
+with Murmur.load("vibevoice") as m:   # or Murmur.load("moss", language="zh")
+    print(m.transcribe("meeting.wav"))  # [  12.40-  15.10] SPEAKER_01: ...
 ```
 
-Or start the server yourself (e.g. on another GPU) and point the client at it:
+<details>
+<summary>Options, CLI and a separately started server</summary>
+
+`Murmur.load` options: `chunk_s` (default 330), `batch_size` (default 8), `draft_windows`,
+`language` (`"en"` or `"zh"`), `diarize`, `gpu`. `transcribe(..., single_pass=True)` runs the
+single-pass baseline.
+
 ```bash
 # in the vibevoice-vllm environment
 CUDA_VISIBLE_DEVICES=0 murmur serve vibevoice --port 8000 --draft-dir /tmp/murmur_drafts
 # in the murmur environment
 murmur transcribe meeting.wav --model vibevoice --url http://localhost:8000 --draft-dir /tmp/murmur_drafts
 ```
-The draft directory is how the client hands each chunk's draft transcript to the server, so client
-and server must run on the same machine (or share that directory).
-
-Options of `Murmur.load`: `chunk_s` (target chunk length, default 330), `batch_size` (chunks decoded
-concurrently, default 8), `draft_windows` (default: on for VibeVoice-ASR, off for MOSS), `language`
-(`"en"` or `"zh"`, picks the draft model), `diarize` (pyannote for chunk boundaries and speaker
-linking; without it, chunks are fixed windows and speakers are not linked across chunks), `gpu`.
-`transcribe(..., single_pass=True)` runs the single-pass baseline.
+Client and server must share the draft directory (same machine).
+</details>
 
 ## Benchmarks
 
-Prepare the datasets (written to `benchmarks/meeting_datasets/`, or `$MURMUR_DATA`):
+`benchmarks/run.py` reproduces the paper's results, one model, dataset and system at a time.
+
+```bash
+python benchmarks/run.py --model vibevoice --dataset ami_ihm --system murmur --mode latency
+```
+
+<details>
+<summary>Datasets, systems and scoring</summary>
+
 ```bash
 bash benchmarks/prepare/download_ami.sh && python benchmarks/prepare/build_ami_sessions.py   # needs lhotse
 python benchmarks/prepare/download_alimeeting_refs.py --archives Eval_Ali.tar.gz Test_Ali.tar.gz --raw_dir /tmp/ali   # OpenSLR 119
 python benchmarks/prepare/download_aishell4_refs.py --archive test.tar.gz --raw_dir /tmp/aishell4                    # OpenSLR 111
 ```
 
-Run one configuration:
-```bash
-python benchmarks/run.py --model vibevoice --dataset ami_ihm --system murmur --mode latency
-```
-`--system` is `single`, `chunked` (greedy), `murmur` (draft windows for VibeVoice-ASR, target chunks
-only for MOSS-Transcribe-Diarize, as in the paper; `--draft-windows on|off` overrides) or `ngram`
-(vLLM's prompt-lookup baseline);
-`--mode latency` processes recordings one at a time and reports end-to-end latency per recording,
-`--mode throughput` decodes all chunks of a dataset through one pool and reports decoding time.
-
-Scoring follows the paper: WER (CER for Mandarin) with jiwer, cpWER and tcpWER (5 s collar) with
-MeetEval, DER with pyannote.metrics (0.25 s collar, overlap scored), averaged over recordings.
+`--system`: `single`, `chunked` (greedy), `murmur` (as in the paper; `--draft-windows on|off`
+overrides) or `ngram` (vLLM prompt lookup). `--mode latency` reports end-to-end latency per
+recording; `--mode throughput` reports decoding time for a whole dataset. Scoring: WER (CER for
+Mandarin) with jiwer, cpWER and tcpWER (5 s collar) with MeetEval, DER with pyannote.metrics.
+</details>
 
 ## Citation
 
