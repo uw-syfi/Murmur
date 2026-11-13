@@ -20,7 +20,7 @@ pass, which is slow and can fail entirely on a repetition loop.
 Overall, Murmur is **2.5x faster** than single pass on average (2.0-2.9x), end to end including
 diarization, and lowers tcpWER by 2.0 points on average.
 
-![Hierarchical chunking](./docs/figures/hierarchy.png)
+![Hierarchical chunking](https://raw.githubusercontent.com/uw-syfi/Murmur/main/docs/figures/hierarchy.png)
 
 ## Demo
 
@@ -61,8 +61,8 @@ need different vLLM builds.
 
 ```bash
 conda create -n murmur python=3.10 -y && conda activate murmur
-git clone https://github.com/uw-syfi/Murmur.git && cd Murmur
-pip install -e ".[all]"
+pip install "murmur-asr[all]"
+# or, from source: git clone https://github.com/uw-syfi/Murmur.git && pip install -e "Murmur[all]"
 huggingface-cli login   # accept the terms of pyannote/speaker-diarization-3.1 first
 ```
 
@@ -74,12 +74,12 @@ huggingface-cli login   # accept the terms of pyannote/speaker-diarization-3.1 f
 conda create -n vibevoice-vllm python=3.10 -y && conda activate vibevoice-vllm
 pip install vllm==0.14.0
 git clone https://github.com/microsoft/VibeVoice.git && pip install -e VibeVoice
-pip install -e "path/to/Murmur[server]"
+pip install "murmur-asr[server]"
 
 # MOSS-Transcribe-Diarize: vLLM nightly (tested: 0.23.1rc1.dev949)
 conda create -n moss-vllm python=3.10 -y && conda activate moss-vllm
 pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly
-pip install -e "path/to/Murmur[server]"
+pip install "murmur-asr[server]"
 
 # so the client can start the servers itself
 export MURMUR_VLLM_VIBEVOICE=$CONDA_PREFIX/../vibevoice-vllm/bin/vllm
