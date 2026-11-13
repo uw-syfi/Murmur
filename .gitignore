@@ -23,7 +23,7 @@ env/
 
 # Benchmark outputs & checkpoints (scoped, so repo config JSON stays tracked)
 outputs/
-demo/
+/demo/
 results.json
 results_whisperx.json
 
@@ -41,7 +41,7 @@ hf_ami_cache/
 *.rttm
 
 # Model weights
-models/
+/models/
 *.pt
 *.pth
 *.bin
@@ -72,3 +72,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+# Murmur v2 benchmark results and local scratch files
+results/
+scratch_*
+!docs/media/*.mp4
