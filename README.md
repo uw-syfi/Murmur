@@ -27,7 +27,7 @@ WhisperX, VibeVoice-ASR single pass and Murmur (VibeVoice-ASR) on the same 32-mi
 each system has finished. WhisperX runs at batch 8 here, like Murmur (the tables below use its default
 batch 16, about 2.5 s faster on this meeting). Click the image to play the video.
 
-[![Murmur demo](./docs/media/murmur_demo_poster.jpg)](./docs/media/murmur_demo.mp4)
+[![Murmur demo](./docs/media/murmur_demo_v2_poster.jpg)](./docs/media/murmur_demo_v2.mp4)
 
 ## Results
 
