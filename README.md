@@ -3,6 +3,7 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2606.01483-b31b1b.svg)](https://arxiv.org/abs/2606.01483)
 
 **News**
+- 2026/11/13: [Blog post](https://syfi.cs.washington.edu/blog/2026-11-13-murmur/) on Murmur is out.
 - 2026/11/04: [Preprint v2](https://arxiv.org/abs/2606.01483v2) is out.
 - 2026/06/01: [Preprint](https://arxiv.org/abs/2606.01483v1) is released on arXiv.
 
