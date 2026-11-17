@@ -39,12 +39,15 @@ def _transcribe(a) -> int:
     return 0
 
 
+MODEL_CHOICES = ["vibevoice", "moss", "voxtral", "voxtral-small"]
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="murmur", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("serve", help="start a vLLM server for a model, with Murmur's drafter")
-    s.add_argument("model", choices=["vibevoice", "moss"])
+    s.add_argument("model", choices=MODEL_CHOICES)
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--batch-size", type=int, default=8)
     s.add_argument("--speculative", choices=["murmur", "ngram", "none"], default="murmur")
@@ -57,7 +60,7 @@ def main(argv=None) -> int:
 
     t = sub.add_parser("transcribe", help="transcribe audio files")
     t.add_argument("files", nargs="+")
-    t.add_argument("--model", default="vibevoice", choices=["vibevoice", "moss"])
+    t.add_argument("--model", default="vibevoice", choices=MODEL_CHOICES)
     t.add_argument("--url", default=None, help="running server; default: start one")
     t.add_argument("--draft-dir", default=None)
     t.add_argument("--draft-windows", choices=["auto", "on", "off"], default="auto")

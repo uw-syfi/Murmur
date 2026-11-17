@@ -106,6 +106,19 @@ def chunk_bounds(duration_s: float, chunk_s: float, timeline: Timeline | None) -
     return out
 
 
+def max_length_bounds(duration_s: float, max_s: float | None, timeline: Timeline | None) -> list[tuple[float, float]]:
+    """A "single pass" over audio longer than the model can take in one request: the
+    fewest pieces of about equal length that each fit in ``max_s``, cut between speech
+    regions (equal windows without a timeline). One piece when the audio fits."""
+    if not max_s or duration_s <= max_s:
+        return [(0.0, duration_s)]
+    n = int(np.ceil(duration_s / max_s))
+    if not timeline:
+        step = duration_s / n
+        return [(i * step, min(duration_s, (i + 1) * step)) for i in range(n)]
+    return chunk_bounds(duration_s, min(max_s, 1.05 * duration_s / n), timeline)
+
+
 def slice_audio(wav16: torch.Tensor, start: float, end: float, target_sr: int) -> np.ndarray:
     a, b = int(start * SR), min(int(end * SR), wav16.shape[0])
     return resample(wav16[a:b], target_sr)

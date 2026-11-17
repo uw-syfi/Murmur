@@ -3,6 +3,8 @@ Murmur's structure-aware drafter, running inside the vLLM server.
 
 Loaded by the server that ``murmur serve`` / ``Murmur.load`` starts:
 
+  Voxtral (vLLM 0.14, plain-text output): as VibeVoice-ASR, with MURMUR_MODEL=text.
+
   MOSS-Transcribe-Diarize (vLLM nightly, custom-proposer hook):
     --speculative-config '{"model": "murmur.drafting.vllm_proposer.MurmurMossProposer",
                            "num_speculative_tokens": 8}'
@@ -17,6 +19,7 @@ Drafting rules (all drafts are verified, so the output is the model's greedy out
   text       short-window ASR words: start at the word nearest the segment's own
              start time, re-anchor on the first word, then n-gram lookup in the
              drafter transcript (target-tokenized)
+             (plain-text models: the transcript's first words, then n-gram lookup)
   structure  VibeVoice: after "Start": propose the previous "End" value.
              MOSS: after a segment's [end]: "[next start][speaker]".
   self copy  copy ahead from the model's own output (2-8 grams), including
@@ -337,6 +340,46 @@ class VibeVoiceDrafter:
 _RECHECK = 16
 
 
+class TextDrafter:
+    """Drafts for a model that writes plain text (Voxtral): the transcript's first words,
+    n-gram lookup in the transcript, and self copy (loop copy inside repetition loops)."""
+
+    SELF_NMAX = 8
+
+    def __init__(self, dt: DraftTranscript, tok):
+        self.dt, self.ptr, self.n_seen = dt, 0, 0
+        self.self_index: dict[tuple, int] = {}
+        # the output starts with the first word, without a leading space
+        self.head_ids = tok.encode(" ".join(dt.words[:24]), add_special_tokens=False) if dt.words else []
+
+    def _copy(self, gen, k, min_n):
+        for n in range(min(self.SELF_NMAX, len(gen)), min_n - 1, -1):
+            se = self.self_index.get(tuple(gen[-n:]))
+            if se is not None:
+                p = len(gen) - se
+                return [gen[se + j % p] for j in range(k)]
+        return None
+
+    def propose(self, gen, k):
+        for i in range(self.n_seen, len(gen)):
+            for n in range(2, self.SELF_NMAX + 1):
+                if i - n >= 0:
+                    self.self_index[tuple(gen[i - n:i])] = i
+        self.n_seen = len(gen)
+        if USE_TEXT and gen and len(gen) < len(self.head_ids) and gen == self.head_ids[:len(gen)]:
+            return self.head_ids[len(gen):len(gen) + k]
+        d, n_fw = [], 0
+        if USE_TEXT:
+            d, self.ptr, n_fw = self.dt.lookup_n(gen, self.ptr, k)
+        if LOOP_COPY and USE_COPY:
+            loop = self._copy(gen, k, max(n_fw + 1, LOOP_COPY_MIN))
+            if loop:
+                return loop
+        if d:
+            return d
+        return (self._copy(gen, k, 2) or []) if USE_COPY else []
+
+
 class _Req:
     def __init__(self, prompt_len, drafter, missing=None):
         self.prompt_len, self.drafter = prompt_len, drafter
@@ -360,18 +403,31 @@ class MurmurCore:
         self.reqs: dict[str, _Req] = {}
         self._req_ids: list[str] = []
 
-    def _new(self, rid, prompt_len):
+    def _draft_path(self, rid):
+        """The chunk's draft file. vLLM 0.14's transcription endpoint appends ``_<i>``
+        to the request id, so the id without that suffix is tried too."""
         m = _KEY.search(rid)
+        if not m:
+            return None
+        key = m.group(1)
+        base = re.sub(r"_\d+$", "", key)
+        for k in (key, base):
+            if (self.dir / f"{k}.json").exists():
+                return self.dir / f"{k}.json"
+        return self.dir / f"{base if self.kind == 'text' else key}.json"
+
+    def _new(self, rid, prompt_len):
+        path = self._draft_path(rid)
         words, lang, diar_segs, chunk_offset = [], "en", [], 0.0
-        missing = None
-        if m and not (self.dir / f"{m.group(1)}.json").exists():
-            missing = self.dir / f"{m.group(1)}.json"
-        if m and missing is None:
-            d = json.loads((self.dir / f"{m.group(1)}.json").read_text())
+        missing = path if path is not None and not path.exists() else None
+        if path is not None and missing is None:
+            d = json.loads(path.read_text())
             words, lang = [tuple(x) for x in d["words"]], d.get("language", "en")
             diar_segs = [tuple(x) for x in d.get("diar_segments", [])]
             chunk_offset = float(d.get("chunk_offset", 0.0))
         sep = "" if lang == "zh" else " "
+        if self.kind == "text":
+            return _Req(prompt_len, TextDrafter(DraftTranscript(words, self.tok, sep=sep), self.tok), missing)
         if self.kind == "vibevoice":
             dt = DraftTranscript(words, self.tok, sep=sep, escape=_json_escape)
             return _Req(prompt_len, VibeVoiceDrafter(dt, self.tok, lang), missing)
@@ -418,10 +474,29 @@ def patch_ngram(kind: str = "vibevoice"):
     def __init__(self, vllm_config):
         self._setup(vllm_config, kind)
 
-    for name in ("_setup", "_new", "propose"):
+    for name in ("_setup", "_draft_path", "_new", "propose"):
         setattr(cls, name, getattr(MurmurCore, name))
     cls.__init__ = __init__
     cls._murmur = True
+
+
+def allow_long_audio(max_s: float = 4 * 3600.0):
+    """Voxtral: keep a long chunk (or a whole recording) as ONE request. vLLM 0.14 does not
+    split audio for Voxtral (``allow_audio_chunking`` is False); raising ``max_audio_clip_s``
+    is a safeguard in case a vLLM version splits audio longer than it into 30 s requests."""
+    from vllm.model_executor.models import voxtral as vx
+    cls = vx.VoxtralForConditionalGeneration
+    orig = cls.get_speech_to_text_config.__func__
+    if getattr(orig, "_murmur", False):
+        return
+
+    def cfg(c, model_config, task_type):
+        out = orig(c, model_config, task_type)
+        out.max_audio_clip_s = max_s
+        return out
+
+    cfg._murmur = True
+    cls.get_speech_to_text_config = classmethod(cfg)
 
 
 def _install_req_id_hook():

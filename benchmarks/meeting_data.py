@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import soundfile as sf
+
 from murmur.metrics import normalize
 
 DATA = Path(os.environ.get("MURMUR_DATA", Path(__file__).resolve().parent / "meeting_datasets"))
@@ -58,7 +60,7 @@ def parse_rttm(path: Path) -> list[tuple[float, float, str]]:
 
 
 def load(name: str, meetings: list[str] | None = None) -> list[dict]:
-    """Recordings of a dataset: dicts with id, wav path, references and language."""
+    """Recordings of a dataset: dicts with id, wav path, duration, references and language."""
     cfg = DATASETS[name]
     root = DATA / name / "test"
     wav_dir = root / "wav"
@@ -72,6 +74,7 @@ def load(name: str, meetings: list[str] | None = None) -> list[dict]:
             continue
         stm, rttm = root / "stm" / f"{mid}.stm", root / "rttm" / f"{mid}.rttm"
         out.append({"id": mid, "wav": str(wav), "language": cfg["language"], "cjk": cfg["language"] == "zh",
+                    "duration_s": sf.info(str(wav)).duration,
                     "ref_segments": parse_stm(stm) if stm.exists() else [],
                     "ref_rttm": parse_rttm(rttm) if rttm.exists() else []})
     return out

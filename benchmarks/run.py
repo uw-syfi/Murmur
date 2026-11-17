@@ -1,7 +1,9 @@
 """Benchmark one model x dataset x system.
 
 Systems (as in the paper):
-  single   whole recording in one request, the model's own speaker labels
+  single   whole recording in one request, the model's own speaker labels; a recording over
+           the model's limit (max_audio_s) is split into the fewest pieces that fit. Plain-text
+           models (Voxtral) get speakers and times from diarization and the short-window ASR.
   chunked  330 s target chunks, greedy decoding, diarization-linked speakers
   murmur   Murmur: target chunks + draft windows for VibeVoice-ASR, target chunks only for
            MOSS-Transcribe-Diarize (--draft-windows on|off overrides)
@@ -39,6 +41,7 @@ import meeting_data as D  # noqa: E402
 from murmur import Murmur  # noqa: E402
 from murmur.audio import load_audio  # noqa: E402
 from murmur.metrics import evaluate  # noqa: E402
+from murmur.models import get_model  # noqa: E402
 
 log = logging.getLogger("bench")
 METRICS = ("wer", "cer", "cpwer", "tcpwer", "der")
@@ -63,7 +66,7 @@ def diarization_cache(m: Murmur, recs, path: Path) -> list:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", required=True, choices=["vibevoice", "moss"])
+    ap.add_argument("--model", required=True, choices=["vibevoice", "moss", "voxtral", "voxtral-small"])
     ap.add_argument("--dataset", required=True, choices=list(D.DATASETS))
     ap.add_argument("--system", required=True, choices=["single", "chunked", "murmur", "ngram"])
     ap.add_argument("--mode", default="latency", choices=["latency", "throughput"])
@@ -87,11 +90,16 @@ def main() -> None:
     recs = D.load(a.dataset, a.meetings)
     lang = recs[0]["language"]
     single = a.system == "single"
+    client_cls = get_model(a.model)
+    # single pass over a recording longer than the model's limit: the fewest pieces that fit
+    split = ([r["id"] for r in recs if r["duration_s"] > client_cls.max_audio_s]
+             if single and client_cls.max_audio_s else [])
     draft_windows = (None if a.draft_windows == "auto" else a.draft_windows == "on") if a.system == "murmur" else False
     m = Murmur.load(a.model, url=a.url, draft_dir=a.draft_dir, batch_size=1 if single and a.mode == "latency" else a.batch_size,
                     chunk_s=a.chunk_s, language=lang, gpu=a.gpu, vllm_bin=a.vllm_bin,
                     draft_windows=draft_windows, speculative="ngram" if a.system == "ngram" else None,
-                    diarize=not single, single_pass_server=single, keep_failed_output=True)
+                    diarize=not single or not client_cls.diarizes or bool(split), single_pass_server=single,
+                    keep_failed_output=True)
     try:
         # warm-up, not timed
         clip = load_audio(recs[0]["wav"])[: 16_000 * 60]
@@ -125,12 +133,16 @@ def main() -> None:
         with open(out / "results.jsonl", "w") as f:
             for x in res:
                 f.write(json.dumps(x) + "\n")
+        with open(out / "transcripts.jsonl", "w") as f:
+            for r, tr, _ in rows:
+                f.write(json.dumps({"id": r["id"], **tr.to_dict()}, ensure_ascii=False) + "\n")
         decode_s = rows[0][1].stats["stages_s"].get("decoding") if a.mode == "throughput" else None
         summ = {"model": a.model, "dataset": a.dataset, "system": a.system, "mode": a.mode, "batch_size": a.batch_size,
                 "chunk_s": a.chunk_s, "n_recordings": len(res), "audio_s": sum(x["duration_s"] for x in res),
                 "wall_s": wall, "decoding_s": decode_s,
                 "mean_latency_s": _mean([x["latency_s"] for x in res]) if a.mode == "latency" else None,
                 "chunks_failed": sum(x["chunks_failed"] for x in res),
+                "split_over_model_limit": split,
                 **{k: _mean([x[k] for x in res]) for k in METRICS}}
         (out / "summary.json").write_text(json.dumps(summ, indent=1))
         log.info("%s", json.dumps(summ))
