@@ -10,7 +10,7 @@ dynamic = ["version"]
 description = "Efficient long-context ASR inference with hierarchical chunking (target chunks + draft windows on vLLM)."
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "uw-syfi" }]
 keywords = ["asr", "speech-recognition", "vllm", "speculative-decoding", "diarization"]
