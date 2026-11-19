@@ -1,0 +1,5 @@
+Murmur: Efficient Long-Context ASR Inference with Hierarchical Chunking
+Copyright 2026 uw-syfi
+
+Developed by Wei-Tzu Lee, Keisuke Kamahori and Baris Kasikci.
+If you use Murmur in your work, please cite https://arxiv.org/abs/2606.01483
