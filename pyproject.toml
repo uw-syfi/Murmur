@@ -1,14 +1,27 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "murmur"
-version = "0.2.0"
+name = "murmur-asr"
+# Single source of truth: murmur/__init__.py. The release workflow checks the
+# GitHub release tag (vX.Y.Z) matches it.
+dynamic = ["version"]
 description = "Efficient long-context ASR inference with hierarchical chunking (target chunks + draft windows on vLLM)."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "uw-syfi" }]
+keywords = ["asr", "speech-recognition", "vllm", "speculative-decoding", "diarization"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 # Client side (the vLLM server runs in its own environment; see README).
 dependencies = [
     "numpy",
@@ -26,13 +39,22 @@ diarize = ["pyannote.audio>=4.0"]
 drafts = ["faster-whisper>=1.0", "opencc"]
 # Scoring (benchmarks).
 eval = ["jiwer", "meeteval", "pyannote.metrics"]
-all = ["murmur[diarize,drafts,eval]"]
+all = ["murmur-asr[diarize,drafts,eval]"]
 # Server side: only what the drafter plugin needs inside the vLLM process.
 server = ["transformers"]
 test = ["pytest", "jiwer"]
 
+[project.urls]
+Homepage = "https://github.com/uw-syfi/Murmur"
+Repository = "https://github.com/uw-syfi/Murmur"
+Issues = "https://github.com/uw-syfi/Murmur/issues"
+Paper = "https://arxiv.org/abs/2606.01483"
+
 [project.scripts]
 murmur = "murmur.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "murmur.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["murmur*"]
