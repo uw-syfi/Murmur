@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use Murmur, please cite the paper below."
+title: "Murmur"
+type: software
+license: Apache-2.0
+repository-code: "https://github.com/uw-syfi/Murmur"
+authors:
+  - family-names: Lee
+    given-names: Wei-Tzu
+  - family-names: Kamahori
+    given-names: Keisuke
+  - family-names: Kasikci
+    given-names: Baris
+preferred-citation:
+  type: article
+  title: "Murmur: Efficient Long-Context ASR Inference with Hierarchical Chunking"
+  authors:
+    - family-names: Lee
+      given-names: Wei-Tzu
+    - family-names: Kamahori
+      given-names: Keisuke
+    - family-names: Kasikci
+      given-names: Baris
+  journal: "arXiv preprint arXiv:2606.01483"
+  year: 2026
+  url: "https://arxiv.org/abs/2606.01483"

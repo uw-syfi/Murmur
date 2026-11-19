@@ -11,7 +11,7 @@ description = "Efficient long-context ASR inference with hierarchical chunking (
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "uw-syfi" }]
 keywords = ["asr", "speech-recognition", "vllm", "speculative-decoding", "diarization"]
 classifiers = [
