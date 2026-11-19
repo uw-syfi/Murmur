@@ -1,10 +1,10 @@
 """Starting a vLLM server for a model, with Murmur's drafter plugged in.
 
 VibeVoice-ASR and MOSS-Transcribe-Diarize need different vLLM builds (0.14 with the
-VibeVoice plugin; a 0.23 nightly), so each server runs with the ``vllm`` executable
-of its own environment. Point Murmur at it with ``vllm_bin=``, or the environment
-variable ``MURMUR_VLLM_VIBEVOICE`` / ``MURMUR_VLLM_MOSS`` / ``MURMUR_VLLM``; otherwise
-the ``vllm`` on ``PATH`` is used.
+VibeVoice plugin; a 0.23 nightly; Voxtral runs on 0.14), so each server runs with the
+``vllm`` executable of its own environment. Point Murmur at it with ``vllm_bin=``, or
+the environment variable ``MURMUR_VLLM_<MODEL>`` (e.g. ``MURMUR_VLLM_VIBEVOICE``,
+``MURMUR_VLLM_VOXTRAL``) / ``MURMUR_VLLM``; otherwise the ``vllm`` on ``PATH`` is used.
 """
 
 from __future__ import annotations
@@ -37,11 +37,13 @@ def free_port() -> int:
 
 
 def find_vllm(model: str, vllm_bin: str | None = None) -> str:
-    for cand in (vllm_bin, os.environ.get(f"MURMUR_VLLM_{model.upper()}"), os.environ.get("MURMUR_VLLM"),
+    var = "MURMUR_VLLM_" + model.upper().replace("-", "_")
+    family = "MURMUR_VLLM_" + model.split("-")[0].upper()  # voxtral-small -> MURMUR_VLLM_VOXTRAL
+    for cand in (vllm_bin, os.environ.get(var), os.environ.get(family), os.environ.get("MURMUR_VLLM"),
                  shutil.which("vllm")):
         if cand:
             return cand
-    raise FileNotFoundError(f"No vllm executable for {model}: pass vllm_bin=, set MURMUR_VLLM_{model.upper()}, "
+    raise FileNotFoundError(f"No vllm executable for {model}: pass vllm_bin=, set {var}, "
                             f"or start the server yourself (`murmur serve {model}`) and pass url=.")
 
 
@@ -64,16 +66,16 @@ def server_command(client: type[ModelClient], *, port: int, batch_size: int = 8,
         if draft_dir is None:
             raise ValueError("speculative='murmur' needs a draft_dir shared with the client")
         env["MURMUR_DRAFT_DIR"] = str(draft_dir)
-        if name == "vibevoice":  # vLLM 0.14 has no custom-proposer hook: patch the n-gram proposer
+        if client.ngram_patch:  # vLLM 0.14 has no custom-proposer hook: patch the n-gram proposer
             spec = VIBEVOICE_SPEC_CONFIG
-            env["MURMUR_MODEL"] = "vibevoice"
-            env["PYTHONPATH"] = os.pathsep.join([str(SITE_DIR), env["PYTHONPATH"]])
+            env["MURMUR_MODEL"] = client.ngram_patch
         else:
             spec = MOSS_SPEC_CONFIG
-    mem = {"gpu_memory_utilization": gpu_memory_utilization}
-    model_args, model_env = (client.server_args(batch_size, spec, single_pass=single_pass, **mem)
-                             if name == "moss" else client.server_args(batch_size, spec, **mem))
+    model_args, model_env = client.server_args(batch_size, spec, single_pass=single_pass,
+                                               gpu_memory_utilization=gpu_memory_utilization)
     env.update(model_env)
+    if "MURMUR_MODEL" in env or "MURMUR_LONG_AUDIO" in env:  # server-side patches (sitecustomize.py)
+        env["PYTHONPATH"] = os.pathsep.join([str(SITE_DIR), env["PYTHONPATH"]])
     vllm = find_vllm(name, vllm_bin)
     cmd = [vllm, "serve", client.model_path(vllm) if prepare_model else client.hf_id, *model_args,
            "--port", str(port)]

@@ -13,6 +13,9 @@ Pipeline per recording (paper Sec. 4):
      output into drafts that the model verifies (output unchanged);
   4. all chunks are decoded in parallel on the vLLM server;
   5. chunk outputs are stitched: timestamps shifted, speakers linked across chunks.
+     For a model that writes plain text (Voxtral), Murmur adds the speakers and
+     timestamps itself: word times from the short-window ASR, speakers from the
+     diarization (murmur.attribute). The short-window ASR then always runs.
 """
 
 from __future__ import annotations
@@ -26,7 +29,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from .audio import SR, Diarizer, Timer, chunk_bounds, load_audio, resample, slice_audio
+from .attribute import attribute
+from .audio import SR, Diarizer, Timer, chunk_bounds, load_audio, max_length_bounds, resample, slice_audio
 from .models import ModelClient, get_model
 from .stitch import chunk_speaker_count, stitch
 from .types import Transcript
@@ -57,7 +61,8 @@ class Murmur:
              gpu_memory_utilization: float | None = None, keep_failed_output: bool = False) -> "Murmur":
         """Load a model.
 
-        model          "vibevoice" (VibeVoice-ASR) or "moss" (MOSS-Transcribe-Diarize).
+        model          "vibevoice" (VibeVoice-ASR), "moss" (MOSS-Transcribe-Diarize), "voxtral"
+                       (Voxtral-Mini-3B) or "voxtral-small" (Voxtral-Small-24B).
         url            an already running server (``murmur serve``); otherwise one is started
                        with the ``vllm`` of this model's environment (see :mod:`murmur.server`).
         draft_windows  speculative decoding from 30 s draft windows; default on for VibeVoice-ASR
@@ -94,9 +99,10 @@ class Murmur:
                                 single_pass=single_pass_server, gpu_memory_utilization=gpu_memory_utilization)
             url = server.url
         client = client_cls(url, served_name=served_name)
+        client.language = language
         diarizer = Diarizer(hf_token) if diarize else None
         drafter = None
-        if draft_windows:
+        if draft_windows or not client_cls.diarizes:  # a text model needs the ASR's word times
             from .drafting.whisper_drafts import WhisperDrafter
             drafter = WhisperDrafter(language)
         return cls(client, server=server, chunk_s=chunk_s, batch_size=batch_size, draft_windows=draft_windows,
@@ -108,6 +114,8 @@ class Murmur:
         """Transcribe one recording (a path, or a waveform with ``sr``).
 
         single_pass  decode the whole recording in one request (the baseline; no chunking).
+                     Audio longer than the model's ``max_audio_s`` is split into the fewest
+                     pieces that fit, and their speakers are linked as for target chunks.
         timeline     a precomputed diarization timeline [(start, end, speaker), ...] to use
                      instead of running pyannote (its time is then not counted).
         """
@@ -123,9 +131,12 @@ class Murmur:
         durs = [w.shape[0] / SR for w in wavs]
         cs = self.client.sample_rate
 
-        # 1. diarization and chunk boundaries
+        # 1. diarization and chunk boundaries. A single pass needs diarization for a text
+        #    model (its speakers) or when the audio is over the model's limit (linking).
+        text_model = not self.client.diarizes
+        max_s = self.client.max_audio_s
         tls: list = [None] * len(wavs)
-        if single_pass:
+        if single_pass and not text_model and all(not max_s or d <= max_s for d in durs):
             jobs = [(r, 0.0, durs[r]) for r in range(len(wavs))]
         else:
             with timer("diarization"):
@@ -134,29 +145,37 @@ class Murmur:
                         tls[r] = [tuple(t) for t in timelines[r]]
                     elif self.diarizer is not None:
                         tls[r] = self.diarizer(w)
-            jobs = [(r, a, b) for r in range(len(wavs)) for a, b in chunk_bounds(durs[r], self.chunk_s, tls[r])]
-        arrays = [resample(wavs[r], cs) if single_pass else slice_audio(wavs[r], a, b, cs) for r, a, b in jobs]
+            jobs = [(r, a, b) for r in range(len(wavs))
+                    for a, b in (max_length_bounds(durs[r], max_s, tls[r]) if single_pass
+                                 else chunk_bounds(durs[r], self.chunk_s, tls[r]))]
+        arrays = [slice_audio(wavs[r], a, b, cs) for r, a, b in jobs]
         run_id = uuid.uuid4().hex[:8]
         keys = [f"{run_id}_{i}" for i in range(len(jobs))]
 
-        # 2. draft windows (a background thread, overlapped with decoding)
+        # 2. draft windows (a background thread, overlapped with decoding). A text model
+        #    also needs the short-window ASR's word times, in single pass too.
         ready = None
         draft_thread = None
-        if self.draft_windows and not single_pass:
+        use_drafts = self.draft_windows and not single_pass
+        asr_words: list = [[] for _ in jobs]
+        if use_drafts or (text_model and self.drafter is not None):
             from .drafting.whisper_drafts import write_draft
-            ready = [threading.Event() for _ in jobs]
+            ready = [threading.Event() for _ in jobs] if use_drafts else None
 
             def drafting():
                 t0 = time.perf_counter()
                 for i, (r, a, b) in enumerate(jobs):
                     try:
                         words = self.drafter(slice_audio(wavs[r], a, b, SR))
-                        diar = ([list(t) for t in tls[r] if t[1] > a and t[0] < b]
-                                if self.client.name == "moss" and tls[r] else [])
-                        write_draft(Path(self.draft_dir), keys[i], words, self.language, a, diar)
+                        asr_words[i] = [(a + t, w) for t, w in words]
+                        if use_drafts:
+                            diar = ([list(t) for t in tls[r] if t[1] > a and t[0] < b]
+                                    if self.client.drafts_use_diarization and tls[r] else [])
+                            write_draft(Path(self.draft_dir), keys[i], words, self.language, a, diar)
                     except Exception:  # a chunk without drafts still decodes (structure + self copy)
-                        log.exception("drafting failed for chunk %d", i)
-                    ready[i].set()
+                        log.exception("short-window ASR failed for chunk %d", i)
+                    if ready is not None:
+                        ready[i].set()
                 timer.stages["drafting"] = time.perf_counter() - t0
             draft_thread = threading.Thread(target=drafting, daemon=True)
 
@@ -176,25 +195,35 @@ class Murmur:
         timer.stages["decoding"] = time.perf_counter() - t0
         self._cleanup_drafts(keys)
 
-        # 4. stitch per recording (with the model-informed speaker-count hint)
+        # 4. stitch per recording (with the model-informed speaker-count hint); a text
+        #    model's words get times and speakers here instead
         out = []
         for r in range(len(wavs)):
             idx = [i for i, j in enumerate(jobs) if j[0] == r]
-            pieces = [(jobs[i][1], jobs[i][2], self.client.parse(replies[i].text, keep_raw=self.keep_failed_output))
-                      for i in idx]
-            tl = tls[r]
-            if tl and self.diarizer is not None and not single_pass:
-                k = chunk_speaker_count([p[2] for p in pieces])
-                if k > 1 and len({t[2] for t in tl}) < k:
-                    with timer("rediarization"):
-                        tl = self.diarizer(wavs[r], min_speakers=k) or tl
-            segs = stitch(pieces, None if single_pass else tl, merge_gap_s=self.client.merge_gap_s,
-                          clamp=self.client.name == "vibevoice")
+            if text_model:
+                segs = sorted((s for i in idx for s in attribute(replies[i].text, asr_words[i], jobs[i][1],
+                                                                   jobs[i][2], tls[r])), key=lambda s: s.start)
+            else:
+                segs = self._stitch(r, idx, jobs, replies, wavs, tls, single_pass, timer)
             stats = {"n_chunks": len(idx), "chunks_failed": sum(self.client.flagged(replies[i]) for i in idx),
                      "request_s": [round(replies[i].seconds, 3) for i in idx],
                      "chunks": [(jobs[i][1], jobs[i][2]) for i in idx], "stages_s": dict(timer.stages)}
             out.append(Transcript(segs, durs[r], stats))
         return out
+
+    def _stitch(self, r, idx, jobs, replies, wavs, tls, single_pass, timer):
+        """A diarizing model's chunk outputs, with the model-informed speaker-count hint."""
+        pieces = [(jobs[i][1], jobs[i][2], self.client.parse(replies[i].text, keep_raw=self.keep_failed_output))
+                  for i in idx]
+        tl = tls[r]
+        if tl and self.diarizer is not None and not single_pass:
+            k = chunk_speaker_count([p[2] for p in pieces])
+            if k > 1 and len({t[2] for t in tl}) < k:
+                with timer("rediarization"):
+                    tl = self.diarizer(wavs[r], min_speakers=k) or tl
+        whole = single_pass and len(pieces) == 1  # one request: the model's own speaker labels
+        return stitch(pieces, None if whole else tl, merge_gap_s=self.client.merge_gap_s,
+                      clamp=self.client.clamp_to_chunk)
 
     def _cleanup_drafts(self, keys):
         if self.draft_dir is None:

@@ -46,14 +46,25 @@ corrected reference reader (2-6 points lower than earlier arXiv versions).</sub>
 
 ## Supported models
 
-Murmur runs each model on its own vLLM server and talks to it through a small client class.
+Murmur runs each model on its own vLLM server and talks to it through a small client class. To
+add a model, add a client class in `murmur/models/`.
 
-| Model | `Murmur.load(...)` | Draft windows | vLLM server |
-|---|---|---|---|
-| [VibeVoice-ASR](https://huggingface.co/microsoft/VibeVoice-ASR) (8.5B) | `"vibevoice"` | on | vLLM 0.14 + VibeVoice plugin |
-| [MOSS-Transcribe-Diarize](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize) (0.9B) | `"moss"` | off | vLLM nightly |
+**Diarizing ASR models** write the words, timestamps and speaker labels themselves.
 
-Both are tested on English and Mandarin. To add a model, add a client class in `murmur/models/`.
+| Model | `Murmur.load(...)` | Draft windows | Max audio | Tested on | vLLM server |
+|---|---|---|---|---|---|
+| [VibeVoice-ASR](https://huggingface.co/microsoft/VibeVoice-ASR) (8.5B) | `"vibevoice"` | on | 60 min | English, Mandarin | vLLM 0.14 + VibeVoice plugin |
+| [MOSS-Transcribe-Diarize](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize) (0.9B) | `"moss"` | off | 90 min | English, Mandarin | vLLM nightly |
+
+**Text-only ASR models** write plain text; Murmur adds word times (from the short-window Whisper
+model) and speakers (from pyannote).
+
+| Model | `Murmur.load(...)` | Draft windows | Max audio | Tested on | vLLM server |
+|---|---|---|---|---|---|
+| [Voxtral Mini](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507) (3B) | `"voxtral"` | on | 30 min | English | vLLM 0.14 |
+| [Voxtral Small](https://huggingface.co/mistralai/Voxtral-Small-24B-2507) (24B) | `"voxtral-small"` | on | 30 min | English | vLLM 0.14 |
+
+A single pass over a model's max audio length is split into the fewest pieces that fit.
 
 ## Install
 

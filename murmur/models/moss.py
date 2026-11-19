@@ -11,7 +11,7 @@ import re
 import numpy as np
 import requests
 
-from .base import LocalSegment, ModelClient, Reply
+from .base import DiarizingModel, LocalSegment, Reply
 
 _SEG_RE = re.compile(r"\[(\d+(?:\.\d+)?)\]\[(S\d+)\](.*?)\[(\d+(?:\.\d+)?)\]"
                      r"(?=\s*\[\d+(?:\.\d+)?\]\[S\d+\]|\s*$)", re.DOTALL)
@@ -32,12 +32,14 @@ def parse_moss_transcript(text: str) -> list[tuple[float, float, str, str]]:
         return out
 
 
-class MossClient(ModelClient):
+class MossClient(DiarizingModel):
     name = "moss"
     hf_id = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
     sample_rate = 16_000
     draft_windows_default = False  # 0.6B decoder: drafting costs more than it saves (paper Sec. 4.3)
     merge_gap_s = None
+    drafts_use_diarization = True  # drafts the next speaker tag from the diarization
+    max_audio_s = 5400.0  # 90 min
     tokens_per_s = 32.0
     min_tokens = 512
 

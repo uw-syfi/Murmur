@@ -13,7 +13,7 @@ import json
 import numpy as np
 import requests
 
-from .base import LocalSegment, ModelClient, Reply
+from .base import DiarizingModel, LocalSegment, Reply
 
 SYSTEM_PROMPT = "You are a helpful assistant that transcribes audio input into text output in JSON format."
 SHOW_KEYS = ["Start time", "End time", "Speaker ID", "Content"]
@@ -79,12 +79,15 @@ def parse_json_transcript(text: str) -> list[dict] | None:
     return rows
 
 
-class VibeVoiceClient(ModelClient):
+class VibeVoiceClient(DiarizingModel):
     name = "vibevoice"
     hf_id = "microsoft/VibeVoice-ASR"
     sample_rate = 24_000
     draft_windows_default = True
     merge_gap_s = 1.5
+    clamp_to_chunk = True
+    ngram_patch = "vibevoice"  # vLLM 0.14: no custom-proposer hook
+    max_audio_s = 3600.0  # 60 min: longer single passes fail (empirical)
     max_new_tokens = 32_768
 
     def default_served_name(self) -> str:
@@ -154,7 +157,7 @@ class VibeVoiceClient(ModelClient):
         return path
 
     @classmethod
-    def server_args(cls, batch_size, speculative_config, gpu_memory_utilization=None):
+    def server_args(cls, batch_size, speculative_config, single_pass=False, gpu_memory_utilization=None):
         args = ["--served-model-name", "vibevoice", "--trust-remote-code", "--dtype", "bfloat16",
                 "--max-num-seqs", str(batch_size),
                 "--cudagraph-capture-sizes", *map(str, [1, 2, 4, 8, 16, 32, 48, 64, 96, 128, 144]),
