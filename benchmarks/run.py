@@ -95,8 +95,6 @@ def main() -> None:
     split = ([r["id"] for r in recs if r["duration_s"] > client_cls.max_audio_s]
              if single and client_cls.max_audio_s else [])
     draft_windows = (None if a.draft_windows == "auto" else a.draft_windows == "on") if a.system == "murmur" else False
-    # A chunk that loops and never closes its output is scored as decoded, without retries: for
-    # VibeVoice-ASR that is no segments (its words count as missed), as in the paper's evaluation.
     m = Murmur.load(a.model, url=a.url, draft_dir=a.draft_dir, batch_size=1 if single and a.mode == "latency" else a.batch_size,
                     chunk_s=a.chunk_s, language=lang, gpu=a.gpu, vllm_bin=a.vllm_bin,
                     draft_windows=draft_windows, speculative="ngram" if a.system == "ngram" else None,
