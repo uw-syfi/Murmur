@@ -121,8 +121,9 @@ class VibeVoiceClient(DiarizingModel):
     def parse(self, text, keep_raw: bool = False):
         """Segments of one chunk. A missing end time means "until the chunk ends" (``end=None``).
 
-        ``keep_raw``: if the output does not parse (a repetition loop), return it as one
-        raw segment so it is scored as errors, as in the paper's evaluation.
+        An output that does not parse (a repetition loop that never closes its JSON) gives no
+        segments, so the chunk's words count as missed, as in the paper's evaluation.
+        ``keep_raw`` returns it as one raw segment instead (for inspection).
         """
         rows = parse_json_transcript(text)
         if rows is None:
