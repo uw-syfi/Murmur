@@ -99,7 +99,7 @@ def main() -> None:
                     chunk_s=a.chunk_s, language=lang, gpu=a.gpu, vllm_bin=a.vllm_bin,
                     draft_windows=draft_windows, speculative="ngram" if a.system == "ngram" else None,
                     diarize=not single or not client_cls.diarizes or bool(split), single_pass_server=single,
-                    keep_failed_output=True)
+                    keep_failed_output=False)
     try:
         # warm-up, not timed
         clip = load_audio(recs[0]["wav"])[: 16_000 * 60]

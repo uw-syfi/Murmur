@@ -38,6 +38,34 @@ def test_transcribe_chunks_decodes_and_stitches():
     assert t.text == "hello world good morning hello world good morning"
 
 
+class LoopingVibeVoice(FakeVibeVoice):
+    """Like FakeVibeVoice, but the second chunk falls into a repetition loop and never closes its JSON."""
+
+    def decode(self, audio, request_id=None, retries=3):
+        reply = super().decode(audio, request_id, retries)
+        if len(self.calls) == 2:
+            return Reply('[{"Start":0.0,"End":4.0,"Speaker":0,"Content":"' + "okay " * 2000, 0.01, "length")
+        return reply
+
+
+def test_looping_chunk_is_scored_as_missed_words():
+    """As in the paper: a VibeVoice-ASR chunk that loops adds no text (its words count as missed)."""
+    m = Murmur(LoopingVibeVoice(), chunk_s=20.0, batch_size=1)
+    tl = [(0, 4.5, "A"), (4.5, 20, "B"), (25, 29.5, "B"), (29.5, 45, "A")]
+    t = m.transcribe(np.zeros(SR * 50, dtype=np.float32), sr=SR, timeline=tl)
+    assert t.stats["chunks_failed"] == 1
+    assert t.text == "hello world good morning"  # the looping chunk's "okay okay ..." is dropped
+
+
+def test_benchmark_runner_scores_loops_as_in_the_paper():
+    import ast
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "benchmarks" / "run.py").read_text()
+    kws = [k for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Call)
+           for k in n.keywords if k.arg == "keep_failed_output"]
+    assert kws and all(isinstance(k.value, ast.Constant) and k.value.value is False for k in kws)
+
+
 def test_single_pass_sends_the_whole_recording():
     client = FakeVibeVoice()
     t = Murmur(client).transcribe(np.zeros(SR * 50, dtype=np.float32), sr=SR, single_pass=True)
