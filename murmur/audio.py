@@ -19,7 +19,6 @@ Timeline = list[tuple[float, float, str]]  # (start_s, end_s, speaker)
 
 def load_audio(audio, sr: int | None = None) -> torch.Tensor:
     """16 kHz mono float32 waveform from a path, numpy array or tensor (give ``sr`` for arrays)."""
-    import torchaudio
     if isinstance(audio, (str, Path)):
         import soundfile as sf
         data, sr = sf.read(str(audio), dtype="float32", always_2d=True)  # (frames, channels)
@@ -32,6 +31,7 @@ def load_audio(audio, sr: int | None = None) -> torch.Tensor:
     if wav.ndim > 1:
         wav = wav.mean(0) if wav.shape[0] < wav.shape[-1] else wav.mean(-1)
     if sr != SR:
+        import torchaudio
         wav = torchaudio.functional.resample(wav.unsqueeze(0), sr, SR).squeeze(0)
     return wav.contiguous()
 
@@ -122,6 +122,19 @@ def max_length_bounds(duration_s: float, max_s: float | None, timeline: Timeline
 def slice_audio(wav16: torch.Tensor, start: float, end: float, target_sr: int) -> np.ndarray:
     a, b = int(start * SR), min(int(end * SR), wav16.shape[0])
     return resample(wav16[a:b], target_sr)
+
+
+def chunk_waveform(wav16: torch.Tensor, start: float, end: float, decode_sr: int) -> tuple[np.ndarray, np.ndarray]:
+    """One slice of ``[start, end)`` resampled for the model and for 16 kHz draft/ASR.
+
+    When ``decode_sr`` is 16 kHz, both arrays share the same buffer (MOSS, Voxtral).
+    """
+    a, b = int(start * SR), min(int(end * SR), wav16.shape[0])
+    chunk = wav16[a:b]
+    decode = resample(chunk, decode_sr)
+    if decode_sr == SR:
+        return decode, decode
+    return decode, resample(chunk, SR)
 
 
 class Timer:
