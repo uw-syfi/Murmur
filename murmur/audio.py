@@ -19,6 +19,7 @@ Timeline = list[tuple[float, float, str]]  # (start_s, end_s, speaker)
 
 def load_audio(audio, sr: int | None = None) -> torch.Tensor:
     """16 kHz mono float32 waveform from a path, numpy array or tensor (give ``sr`` for arrays)."""
+    import torchaudio
     if isinstance(audio, (str, Path)):
         import soundfile as sf
         data, sr = sf.read(str(audio), dtype="float32", always_2d=True)  # (frames, channels)
@@ -31,7 +32,6 @@ def load_audio(audio, sr: int | None = None) -> torch.Tensor:
     if wav.ndim > 1:
         wav = wav.mean(0) if wav.shape[0] < wav.shape[-1] else wav.mean(-1)
     if sr != SR:
-        import torchaudio
         wav = torchaudio.functional.resample(wav.unsqueeze(0), sr, SR).squeeze(0)
     return wav.contiguous()
 
