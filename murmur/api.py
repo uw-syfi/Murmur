@@ -84,7 +84,7 @@ class Murmur:
         """
         client_cls = get_model(model)
         if backend == "mlx":
-            from .models.mlx_moss import MLXMossClient
+            from .models.moss import MLXMossClient
             if client_cls.name != "moss":
                 raise ValueError("The MLX backend supports model='moss'.")
             if (any(x is not None for x in (url, vllm_bin, served_name, gpu, server_log, gpu_memory_utilization,

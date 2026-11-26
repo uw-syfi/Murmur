@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from murmur import Murmur
-from murmur.models.mlx_moss import DEFAULT_CHECKPOINT
+from murmur.models.moss import DEFAULT_CHECKPOINT
 
 
 def test_mlx_transcribes_chunks_with_one_unquantized_model(monkeypatch):
@@ -39,7 +39,7 @@ def test_mlx_rejects_unsupported_settings_before_loading(options):
 @pytest.mark.parametrize("draft,budget", [([], 9), ([7, 7], 9), ([2, 3, 7], 9), ([2, 3, 4, 5], 9),
                                            ([2, 3, 4, 5], 3), ([], 1), ([], 0)])
 def test_mlx_verifier_matches_greedy_after_rollback(draft, budget):
-    from murmur.drafting.mlx_moss import verify_greedy
+    from murmur.models.moss import verify_greedy
 
     cache = []
     eos = 5
@@ -63,7 +63,8 @@ def test_mlx_verifier_matches_greedy_after_rollback(draft, budget):
 
 
 def test_local_drafts_stay_with_their_chunk(monkeypatch):
-    from murmur.drafting import mlx_moss, whisper_drafts
+    from murmur.drafting import whisper_drafts
+    from murmur.models import moss
 
     words = [(0.1, "hello")]
     whisper = Mock(return_value=words)
@@ -73,7 +74,7 @@ def test_local_drafts_stay_with_their_chunk(monkeypatch):
     model.generate.return_value = SimpleNamespace(text="[0.00][S01]hello[0.50]")
     monkeypatch.setitem(sys.modules, "moss_transcribe_diarize.mlx", SimpleNamespace(load_model=Mock(return_value=model)))
     monkeypatch.setattr(whisper_drafts, "WhisperDrafter", whisper_loader)
-    monkeypatch.setattr(mlx_moss, "generate", verify)
+    monkeypatch.setattr(moss, "_generate_with_draft", verify)
     audio = np.zeros(32_000, dtype=np.float32)
     timeline = [(0, 1, "A"), (1, 2, "B")]
     with Murmur.load("moss", backend="mlx", speculative="murmur", diarize=False, chunk_s=1) as pipeline:

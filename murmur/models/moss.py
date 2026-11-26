@@ -1,4 +1,4 @@
-"""MOSS-Transcribe-Diarize (OpenMOSS-Team/MOSS-Transcribe-Diarize) on a vLLM nightly build.
+"""MOSS-Transcribe-Diarize (OpenMOSS-Team/MOSS-Transcribe-Diarize) on vLLM and Apple MLX.
 
 The model writes ``[start][Sxx]text[end]`` segments, e.g. ``[0.00][S01]hello there[1.84]``.
 """
@@ -7,11 +7,16 @@ from __future__ import annotations
 
 import io
 import re
+from pathlib import Path
+from threading import Lock
+from time import perf_counter
 
 import numpy as np
 import requests
 
 from .base import DiarizingModel, LocalSegment, Reply
+
+DEFAULT_CHECKPOINT = "vanch007/mlx-MOSS-Transcribe-Diarize"
 
 _SEG_RE = re.compile(r"\[(\d+(?:\.\d+)?)\]\[(S\d+)\](.*?)\[(\d+(?:\.\d+)?)\]"
                      r"(?=\s*\[\d+(?:\.\d+)?\]\[S\d+\]|\s*$)", re.DOTALL)
@@ -82,3 +87,93 @@ class MossClient(MossModel):
             args += ["--speculative-config", speculative_config]
         env = {"VLLM_MAX_AUDIO_CLIP_FILESIZE_MB": "300", "VLLM_MAX_AUDIO_DECODE_DURATION_S": "4000"}
         return args, env
+
+
+class MLXMossClient(MossModel):
+    def __init__(self, checkpoint: str | Path | None = None):
+        try:
+            from moss_transcribe_diarize.mlx import load_model
+        except ImportError as exc:
+            raise ImportError("Install the MOSS MLX runtime as described in the README.") from exc
+        self.model = load_model(checkpoint or DEFAULT_CHECKPOINT, strict=True)
+        self._lock = Lock()
+
+    def decode(self, audio, request_id=None, retries=3) -> Reply:
+        with self._lock:
+            if self.model is None:
+                raise RuntimeError("The MLX model is closed.")
+            start = perf_counter()
+            result = self.model.generate(audio, max_tokens=self.budget(audio), temperature=0.0)
+            return Reply(result.text, perf_counter() - start)
+
+    def decode_with_draft(self, audio, words, language, diar_segments, chunk_offset) -> Reply:
+        with self._lock:
+            if self.model is None:
+                raise RuntimeError("The MLX model is closed.")
+            start = perf_counter()
+            text, stats = _generate_with_draft(self.model, audio, words, language, diar_segments, chunk_offset, self.budget(audio))
+            return Reply(text, perf_counter() - start, speculative=stats)
+
+    def close(self) -> None:
+        with self._lock:
+            self.model = None
+
+
+def verify_greedy(first, proposer, verify, rewind, eos, budget):
+    """Keep the last emitted token pending. The cache holds everything before it."""
+    tokens = []
+    stats = {"proposed": 0, "accepted": 0, "verification_calls": 0}
+    if budget <= 0 or first in eos:
+        return tokens, stats
+    tokens.append(first)
+    while len(tokens) < budget:
+        # Leave room for the target's correction (or a bonus after a full match).
+        k = min(8, budget - len(tokens) - 1)
+        draft = proposer.propose(tokens, k)[:k] if k else []
+        predictions = verify([tokens[-1], *draft])
+        matched = 0
+        while matched < len(draft) and predictions[matched] == draft[matched]:
+            matched += 1
+        stats["verification_calls"] += 1
+        stats["proposed"] += len(draft)
+        stats["accepted"] += matched
+        if matched < len(draft):
+            rewind(len(draft) - matched)
+        for token in predictions[:matched + 1]:
+            if token in eos:
+                return tokens, stats
+            tokens.append(token)
+    return tokens, stats
+
+
+def _generate_with_draft(model, audio, words, language, diar_segments, offset, budget):
+    import mlx.core as mx
+    from mlx_lm.models.cache import trim_prompt_cache
+
+    from ..drafting.vllm_proposer import DraftTranscript, MossDrafter
+
+    tokenizer = model._tokenizer
+    transcript = DraftTranscript(words, tokenizer, sep="" if language == "zh" else " ")
+    proposer = MossDrafter(transcript, tokenizer, language, diar_segments, offset)
+    ids, embeddings, length, _ = model._prepare_generation_inputs(audio, None)
+    cache = model.make_cache()
+
+    # Mirror the runtime's chunked audio prefill, leaving the final prompt token
+    # for a one-position forward pass just like the ordinary greedy generator.
+    for start in range(0, length - 1, 2048):
+        end = min(start + 2048, length - 1)
+        model(ids[None, start:end], input_embeddings=embeddings[None, start:end], cache=cache)
+        mx.eval([layer.state for layer in cache])
+    logits = model(ids[None, -1:], input_embeddings=embeddings[None, -1:], cache=cache)
+    first = mx.argmax(logits[0, -1]).item()
+
+    def verify(block):
+        logits = model(mx.array([block]), cache=cache)
+        return mx.argmax(logits[0], axis=-1).tolist()
+
+    def rewind(count):
+        if trim_prompt_cache(cache, count) != count:
+            raise RuntimeError("MOSS could not rewind the speculative token cache.")
+
+    tokens, stats = verify_greedy(first, proposer, verify, rewind, model._eos_token_ids(), budget)
+    return tokenizer.decode(tokens, skip_special_tokens=True).strip(), stats
