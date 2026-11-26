@@ -17,13 +17,19 @@ SR = 16_000
 Timeline = list[tuple[float, float, str]]  # (start_s, end_s, speaker)
 
 
+def read_audio_file(file) -> tuple[np.ndarray, int]:
+    """Read a path or an uploaded file stream as mono samples at its original rate."""
+    import soundfile as sf
+    data, sr = sf.read(file, dtype="float32", always_2d=True)
+    return data.mean(axis=1), sr
+
+
 def load_audio(audio, sr: int | None = None) -> torch.Tensor:
     """16 kHz mono float32 waveform from a path, numpy array or tensor (give ``sr`` for arrays)."""
     import torchaudio
     if isinstance(audio, (str, Path)):
-        import soundfile as sf
-        data, sr = sf.read(str(audio), dtype="float32", always_2d=True)  # (frames, channels)
-        wav = torch.from_numpy(data.mean(axis=1))
+        data, sr = read_audio_file(audio)
+        wav = torch.from_numpy(data)
     else:
         wav = audio if isinstance(audio, torch.Tensor) else torch.as_tensor(np.asarray(audio, dtype=np.float32))
         if sr is None:

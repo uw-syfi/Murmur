@@ -30,6 +30,7 @@ dependencies = [
     "soundfile",
     "torch",
     "torchaudio",
+    "werkzeug>=3.0",
 ]
 
 [project.optional-dependencies]
