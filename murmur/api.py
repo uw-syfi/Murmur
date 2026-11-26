@@ -101,8 +101,8 @@ class Murmur:
             if speculative not in (None, "murmur") or (speculative and draft_windows is False):
                 raise ValueError("MLX supports speculative='murmur' with draft windows enabled.")
             use_drafts = bool(draft_windows or speculative)
-            if use_drafts and client_cls.name != "moss":
-                raise ValueError("MLX speculative decoding is supported only for MOSS.")
+            if use_drafts and not hasattr(local_clients[client_cls.name], "decode_with_draft"):
+                raise ValueError("MLX speculative decoding is supported for MOSS and VibeVoice.")
             client = local_clients[client_cls.name](checkpoint, quantization)
             client.language = language
             drafter = None

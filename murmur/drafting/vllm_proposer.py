@@ -267,6 +267,11 @@ class VibeVoiceDrafter:
         self.seg_start, self.ptr, self.n_seen = None, 0, 0
         self.self_index: dict[tuple, int] = {}
 
+    @classmethod
+    def from_words(cls, words, tokenizer, language):
+        transcript = DraftTranscript(words, tokenizer, sep="" if language == "zh" else " ", escape=_json_escape)
+        return cls(transcript, tokenizer, language)
+
     def _advance(self, gen):
         for i in range(self.n_seen, len(gen)):
             for n in range(2, self.SELF_NMAX + 1):
@@ -429,8 +434,7 @@ class MurmurCore:
         if self.kind == "text":
             return _Req(prompt_len, TextDrafter(DraftTranscript(words, self.tok, sep=sep), self.tok), missing)
         if self.kind == "vibevoice":
-            dt = DraftTranscript(words, self.tok, sep=sep, escape=_json_escape)
-            return _Req(prompt_len, VibeVoiceDrafter(dt, self.tok, lang), missing)
+            return _Req(prompt_len, VibeVoiceDrafter.from_words(words, self.tok, lang), missing)
         dt = DraftTranscript(words, self.tok, sep=sep)
         return _Req(prompt_len, MossDrafter(dt, self.tok, lang,
                                             diar_segments=diar_segs,

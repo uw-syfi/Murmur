@@ -14,7 +14,7 @@ import numpy as np
 import requests
 
 from .base import DiarizingModel, LocalSegment, Reply
-from .mlx import MLXClient, published_checkpoint
+from .mlx import MLXClient, published_checkpoint, verify_greedy
 
 # (MLX mode, bits, group size) for weight-only quantization at load time.
 MLX_QUANTIZATION = {
@@ -127,33 +127,6 @@ class MLXMossClient(MLXClient, MossModel):
             start = perf_counter()
             text, stats = _generate_with_draft(self.model, audio, words, language, diar_segments, chunk_offset, self.budget(audio))
             return Reply(text, perf_counter() - start, speculative=stats)
-
-
-def verify_greedy(first, proposer, verify, rewind, eos, budget):
-    """Keep the last emitted token pending. The cache holds everything before it."""
-    tokens = []
-    stats = {"proposed": 0, "accepted": 0, "verification_calls": 0}
-    if budget <= 0 or first in eos:
-        return tokens, stats
-    tokens.append(first)
-    while len(tokens) < budget:
-        # Leave room for the target's correction (or a bonus after a full match).
-        k = min(8, budget - len(tokens) - 1)
-        draft = proposer.propose(tokens, k)[:k] if k else []
-        predictions = verify([tokens[-1], *draft])
-        matched = 0
-        while matched < len(draft) and predictions[matched] == draft[matched]:
-            matched += 1
-        stats["verification_calls"] += 1
-        stats["proposed"] += len(draft)
-        stats["accepted"] += matched
-        if matched < len(draft):
-            rewind(len(draft) - matched)
-        for token in predictions[:matched + 1]:
-            if token in eos:
-                return tokens, stats
-            tokens.append(token)
-    return tokens, stats
 
 
 def _generate_with_draft(model, audio, words, language, diar_segments, offset, budget):

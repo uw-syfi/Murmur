@@ -77,7 +77,7 @@ checkpoint, which requires about 48 GB for weights plus inference memory.
 
 ## Enable speculative decoding
 
-Speculative decoding on MLX is available for MOSS. Install the draft dependencies and enable draft windows.
+Speculative decoding on MLX is available for MOSS and VibeVoice. Install the draft dependencies and enable draft windows.
 
 ```bash
 uv pip install -e '.[drafts]'
@@ -85,8 +85,8 @@ murmur transcribe meeting.wav --model moss --backend mlx --draft-windows on --js
 ```
 
 In Python, use `Murmur.load("moss", backend="mlx", draft_windows=True)`.
-Whisper runs on the CPU and supplies timestamped words to Murmur’s MOSS proposer. The MLX model
+Whisper runs on the CPU and supplies timestamped words to the selected model’s proposer. The MLX model
 checks up to eight proposed tokens per pass. JSON output includes proposed and accepted token counts
-and the number of verification passes in `stats.speculative`. The default for MOSS is greedy decoding.
+and the number of verification passes in `stats.speculative`. Both MLX models default to greedy decoding.
 Use the same chunk size and diarization settings with `--draft-windows off` for a latency comparison.
 `--single-pass` selects the greedy baseline even when draft windows are enabled.

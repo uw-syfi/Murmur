@@ -9,12 +9,13 @@ from __future__ import annotations
 import base64
 import io
 import json
+from time import perf_counter
 
 import numpy as np
 import requests
 
 from .base import DiarizingModel, LocalSegment, Reply
-from .mlx import MLXClient
+from .mlx import MLXClient, verify_greedy
 
 SYSTEM_PROMPT = "You are a helpful assistant that transcribes audio input into text output in JSON format."
 SHOW_KEYS = ["Start time", "End time", "Speaker ID", "Content"]
@@ -177,3 +178,49 @@ class MLXVibeVoiceClient(MLXClient, VibeVoiceClient):
     def _load(self, checkpoint):
         from mlx_audio.stt.utils import load_model
         return load_model(checkpoint, strict=True)
+
+    def decode_with_draft(self, audio, words, language, diar_segments, chunk_offset):
+        from ..drafting.vllm_proposer import VibeVoiceDrafter
+
+        with self._lock:
+            if self.model is None:
+                raise RuntimeError("The MLX model is closed.")
+            if self.model.is_streaming_model:
+                raise ValueError("VibeVoice draft verification requires an offline ASR checkpoint.")
+            start = perf_counter()
+            proposer = VibeVoiceDrafter.from_words(words, self.model.tokenizer, language)
+            text, stats = _generate_with_draft(self.model, audio, proposer, self.budget(audio))
+            return Reply(text, perf_counter() - start, speculative=stats)
+
+
+def _generate_with_draft(model, audio, proposer, budget):
+    import mlx.core as mx
+    from mlx_audio.lm.models.cache import make_prompt_cache
+
+    # Match mlx-audio's speech prompt and 2048-token prefill before verifying draft blocks.
+    waveform = model._preprocess_audio(audio, sampling_rate=24_000)
+    speech = model.encode_speech(waveform)
+    ids, mask = model._build_prompt_tokens(speech, waveform.shape[1] / 24_000)
+    embeddings = model._merge_speech_text_embeddings(ids, speech, mask)
+    lm = model.language_model
+    cache = make_prompt_cache(lm)
+    for start in range(0, ids.shape[1] - 1, 2048):
+        end = min(start + 2048, ids.shape[1] - 1)
+        lm(ids[:, start:end], cache=cache, input_embeddings=embeddings[:, start:end])
+        mx.eval([layer.state for layer in cache])
+        mx.clear_cache()
+    logits = lm(ids[:, -1:], cache=cache, input_embeddings=embeddings[:, -1:])
+    first = mx.argmax(logits[0, -1]).item()
+
+    def verify(block):
+        return mx.argmax(lm(mx.array([block]), cache=cache)[0], axis=-1).tolist()
+
+    def rewind(count):
+        for layer in cache:
+            if layer.trim(count) != count:
+                raise RuntimeError("VibeVoice could not rewind the speculative token cache.")
+
+    eos = {151643, 151645, model.tokenizer.eos_token_id}  # endoftext and im_end, as in mlx-audio
+    tokens, stats = verify_greedy(first, proposer, verify, rewind, eos, budget)
+    mx.clear_cache()
+    return model.tokenizer.decode(tokens, skip_special_tokens=True).strip(), stats
