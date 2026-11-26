@@ -54,22 +54,25 @@ class Murmur:
 
     @classmethod
     def load(cls, model: str = "vibevoice", *, url: str | None = None, draft_windows: bool | None = None,
-             speculative: str | None = None, chunk_s: float = 330.0, batch_size: int = 8, language: str = "en",
+             speculative: str | None = None, chunk_s: float = 330.0, batch_size: int | None = None, language: str = "en",
              gpu: int | str | None = None, vllm_bin: str | None = None, draft_dir: str | Path | None = None,
              diarize: bool = True, hf_token: str | None = None, served_name: str | None = None,
              server_log: str | Path | None = None, single_pass_server: bool = False,
-             gpu_memory_utilization: float | None = None, keep_failed_output: bool = False) -> "Murmur":
+             gpu_memory_utilization: float | None = None, keep_failed_output: bool = False,
+             backend: str = "vllm", checkpoint: str | Path | None = None) -> "Murmur":
         """Load a model.
 
         model          "vibevoice" (VibeVoice-ASR), "moss" (MOSS-Transcribe-Diarize), "voxtral"
                        (Voxtral-Mini-3B) or "voxtral-small" (Voxtral-Small-24B).
+        backend        "vllm" (default) or "mlx" for local MOSS inference on Apple Silicon.
+        checkpoint     MLX model directory or Hub ID; defaults to unquantized MOSS.
         url            an already running server (``murmur serve``); otherwise one is started
                        with the ``vllm`` of this model's environment (see :mod:`murmur.server`).
         draft_windows  speculative decoding from 30 s draft windows; default on for VibeVoice-ASR
                        (7B decoder) and off for MOSS-Transcribe-Diarize (0.6B), as in the paper,
                        and off when ``speculative`` is "ngram".
-        speculative    server-side mode when starting a server: "murmur" (implied by
-                       draft_windows), "ngram" (vLLM prompt lookup, a baseline) or None.
+        speculative    "murmur" enables Murmur proposals on MLX; on vLLM choose "murmur",
+                       "ngram" (prompt lookup baseline) or None.
         chunk_s        target chunk length in seconds (330 in the paper).
         batch_size     chunks decoded concurrently (and the server's --max-num-seqs).
         language       "en" or "zh"; picks the draft model (Whisper-tiny / Whisper-small).
@@ -80,6 +83,32 @@ class Murmur:
                        room for pyannote and the draft model on the same GPU).
         """
         client_cls = get_model(model)
+        if backend == "mlx":
+            from .models.moss import MLXMossClient
+            if client_cls.name != "moss":
+                raise ValueError("The MLX backend supports model='moss'.")
+            if (any(x is not None for x in (url, vllm_bin, served_name, gpu, server_log, gpu_memory_utilization,
+                                            draft_dir)) or single_pass_server):
+                raise ValueError("The MLX backend runs locally and does not accept server options.")
+            if batch_size not in (None, 1):
+                raise ValueError("Use batch_size=1 for local MLX generation.")
+            if speculative not in (None, "murmur") or (speculative and draft_windows is False):
+                raise ValueError("MLX supports speculative='murmur' with draft windows enabled.")
+            use_drafts = bool(draft_windows or speculative)
+            drafter = None
+            if use_drafts:
+                from .drafting.whisper_drafts import WhisperDrafter
+                drafter = WhisperDrafter(language, device="cpu", compute_type="int8")
+            client = MLXMossClient(checkpoint)
+            return cls(client, chunk_s=chunk_s, batch_size=1, language=language,
+                       draft_windows=use_drafts, drafter=drafter,
+                       diarizer=Diarizer(hf_token) if diarize else None, keep_failed_output=keep_failed_output)
+        if backend != "vllm":
+            raise ValueError(f"Unknown backend {backend!r}; choose 'vllm' or 'mlx'.")
+        if checkpoint is not None:
+            raise ValueError("checkpoint is an MLX backend option.")
+        if batch_size is None:
+            batch_size = 8
         if draft_windows is None:
             draft_windows = client_cls.draft_windows_default and speculative in (None, "murmur")
         if speculative is None and draft_windows:
@@ -157,6 +186,8 @@ class Murmur:
         ready = None
         draft_thread = None
         use_drafts = self.draft_windows and not single_pass
+        local_decode = getattr(self.client, "decode_with_draft", None) if use_drafts else None
+        local_drafts = [([], []) for _ in jobs] if local_decode else None
         asr_words: list = [[] for _ in jobs]
         if use_drafts or (text_model and self.drafter is not None):
             from .drafting.whisper_drafts import write_draft
@@ -171,7 +202,10 @@ class Murmur:
                         if use_drafts:
                             diar = ([list(t) for t in tls[r] if t[1] > a and t[0] < b]
                                     if self.client.drafts_use_diarization and tls[r] else [])
-                            write_draft(Path(self.draft_dir), keys[i], words, self.language, a, diar)
+                            if local_decode:
+                                local_drafts[i] = (words, diar)
+                            else:
+                                write_draft(Path(self.draft_dir), keys[i], words, self.language, a, diar)
                     except Exception:  # a chunk without drafts still decodes (structure + self copy)
                         log.exception("short-window ASR failed for chunk %d", i)
                     if ready is not None:
@@ -183,17 +217,22 @@ class Murmur:
         def decode(i):
             if ready is not None:
                 ready[i].wait()
+            if local_decode:
+                words, diar = local_drafts[i]
+                return local_decode(arrays[i], words, self.language, diar, jobs[i][1])
             return self.client.decode(arrays[i], request_id=keys[i] if ready is not None else None)
 
         t0 = time.perf_counter()
         if draft_thread is not None:
             draft_thread.start()
-        with ThreadPoolExecutor(max_workers=self.batch_size) as ex:
-            replies = list(ex.map(decode, range(len(jobs))))
-        if draft_thread is not None:
-            draft_thread.join()
+        try:
+            with ThreadPoolExecutor(max_workers=self.batch_size) as ex:
+                replies = list(ex.map(decode, range(len(jobs))))
+        finally:
+            if draft_thread is not None:
+                draft_thread.join()
+            self._cleanup_drafts(keys)
         timer.stages["decoding"] = time.perf_counter() - t0
-        self._cleanup_drafts(keys)
 
         # 4. stitch per recording (with the model-informed speaker-count hint); a text
         #    model's words get times and speakers here instead
@@ -208,6 +247,9 @@ class Murmur:
             stats = {"n_chunks": len(idx), "chunks_failed": sum(self.client.flagged(replies[i]) for i in idx),
                      "request_s": [round(replies[i].seconds, 3) for i in idx],
                      "chunks": [(jobs[i][1], jobs[i][2]) for i in idx], "stages_s": dict(timer.stages)}
+            spec_stats = [replies[i].speculative for i in idx if replies[i].speculative is not None]
+            if spec_stats:
+                stats["speculative"] = {k: sum(s[k] for s in spec_stats) for k in spec_stats[0]}
             out.append(Transcript(segs, durs[r], stats))
         return out
 
@@ -235,7 +277,8 @@ class Murmur:
                 pass
 
     def close(self) -> None:
-        """Stop the server Murmur started (if any) and remove its temporary draft directory."""
+        """Release the model, stop any managed server, and clean up temporary drafts."""
+        self.client.close()
         if self.server is not None:
             self.server.stop()
             self.server = None

@@ -31,7 +31,7 @@ def _serve(a) -> int:
 def _transcribe(a) -> int:
     from .api import Murmur
     with Murmur.load(a.model, url=a.url, draft_dir=a.draft_dir, chunk_s=a.chunk_s, batch_size=a.batch_size,
-                     language=a.language, gpu=a.gpu, diarize=not a.no_diarize,
+                     backend=a.backend, checkpoint=a.checkpoint, language=a.language, gpu=a.gpu, diarize=not a.no_diarize,
                      draft_windows=None if a.draft_windows == "auto" else a.draft_windows == "on") as m:
         for f in a.files:
             t = m.transcribe(f, single_pass=a.single_pass)
@@ -61,11 +61,13 @@ def main(argv=None) -> int:
     t = sub.add_parser("transcribe", help="transcribe audio files")
     t.add_argument("files", nargs="+")
     t.add_argument("--model", default="vibevoice", choices=MODEL_CHOICES)
+    t.add_argument("--backend", choices=["vllm", "mlx"], default="vllm")
+    t.add_argument("--checkpoint", help="MLX model directory or Hugging Face ID (default: unquantized MOSS)")
     t.add_argument("--url", default=None, help="running server; default: start one")
     t.add_argument("--draft-dir", default=None)
     t.add_argument("--draft-windows", choices=["auto", "on", "off"], default="auto")
     t.add_argument("--chunk-s", type=float, default=330.0)
-    t.add_argument("--batch-size", type=int, default=8)
+    t.add_argument("--batch-size", type=int, help="concurrent chunks (vLLM: 8, MLX: 1)")
     t.add_argument("--language", default="en", choices=["en", "zh"])
     t.add_argument("--gpu", default=None)
     t.add_argument("--no-diarize", action="store_true")
