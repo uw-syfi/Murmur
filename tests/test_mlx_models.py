@@ -28,20 +28,25 @@ def test_vibevoice_uses_24khz_and_preserves_turns(monkeypatch):
 @pytest.mark.parametrize("name,repo", [("voxtral", "Voxtral-Mini-3B-2507"), ("voxtral-small", "Voxtral-Small-24B-2507")])
 def test_voxtral_decodes_on_loading_thread_and_attributes_words(monkeypatch, name, repo):
     processor = Mock()
-    processor.apply_transcrition_request.return_value = SimpleNamespace(input_ids=np.array([[0, 1]]), input_features=[])
+    processor.apply_transcrition_request.return_value = SimpleNamespace(
+        input_ids=np.array([[0, 1]]), input_features=np.zeros((1, 128, 3000), dtype=np.float32),
+    )
     processor.decode.return_value = "hello"
     thread_ids = []
 
     def generate(**kwargs):
         thread_ids.append(threading.get_ident())
         assert kwargs["temperature"] == 0 and kwargs["repetition_penalty"] == 1
+        assert kwargs["input_features"].dtype == np.float16
         return np.array([[0, 1, 77]])
 
     def load(client, checkpoint):
         thread_ids.append(threading.get_ident())
         assert checkpoint == f"efficient-speech/{repo}-MLX-INT4"
         client.processor = processor
-        return SimpleNamespace(generate=generate)
+        model = Mock(generate=generate)
+        model.audio_tower.conv1.weight.dtype = np.float16
+        return model
 
     whisper = Mock(return_value=[(0.2, "hello")])
     monkeypatch.setattr(MLXVoxtralClient, "_load", load)

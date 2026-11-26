@@ -74,7 +74,9 @@ class MLXVoxtralClient(MLXClient, VoxtralClient):
     def _generate(self, audio, budget):
         inputs = self.processor.apply_transcrition_request(audio, language=self.language,
                                                           sampling_rate=self.sample_rate)
-        ids = self.model.generate(input_ids=inputs.input_ids, input_features=inputs.input_features,
+        # Float32 mel features would promote the encoder and the decoder KV cache to float32.
+        features = inputs.input_features.astype(self.model.audio_tower.conv1.weight.dtype)
+        ids = self.model.generate(input_ids=inputs.input_ids, input_features=features,
                                   max_new_tokens=budget, repetition_penalty=1.0, temperature=0.0)
         tokens = ids[0, inputs.input_ids.shape[1]:].tolist()
         text = self.processor.decode(tokens, skip_special_tokens=True)
