@@ -88,10 +88,10 @@ class Murmur:
         if backend == "mlx":
             from .models.moss import MLXMossClient
             from .models.vibevoice import MLXVibeVoiceClient
+            from .models.voxtral import MLXVoxtralClient, MLXVoxtralSmallClient
 
-            local_clients = {"moss": MLXMossClient, "vibevoice": MLXVibeVoiceClient}
-            if client_cls.name not in local_clients:
-                raise ValueError("The MLX backend supports MOSS and VibeVoice.")
+            local_clients = {"moss": MLXMossClient, "vibevoice": MLXVibeVoiceClient,
+                             "voxtral": MLXVoxtralClient, "voxtral-small": MLXVoxtralSmallClient}
             if (any(x is not None for x in (url, vllm_bin, served_name, gpu, server_log, gpu_memory_utilization,
                                             draft_dir)) or single_pass_server):
                 raise ValueError("The MLX backend runs locally and does not accept server options.")
@@ -105,7 +105,7 @@ class Murmur:
             client = local_clients[client_cls.name](checkpoint, quantization)
             client.language = language
             drafter = None
-            if use_drafts:
+            if use_drafts or not client_cls.diarizes:
                 from .drafting.whisper_drafts import WhisperDrafter
                 drafter = WhisperDrafter(language, device="cpu", compute_type="int8")
             return cls(client, chunk_s=chunk_s, batch_size=1, language=language,
@@ -245,8 +245,12 @@ class Murmur:
         if draft_thread is not None:
             draft_thread.start()
         try:
-            with ThreadPoolExecutor(max_workers=self.batch_size) as ex:
-                replies = list(ex.map(decode, range(len(jobs))))
+            if self.batch_size == 1:
+                # MLX streams belong to the thread that initializes the model.
+                replies = [decode(i) for i in range(len(jobs))]
+            else:
+                with ThreadPoolExecutor(max_workers=self.batch_size) as ex:
+                    replies = list(ex.map(decode, range(len(jobs))))
         finally:
             if draft_thread is not None:
                 draft_thread.join()

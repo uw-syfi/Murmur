@@ -24,9 +24,9 @@ def meeting_excerpt(tmp_path_factory):
 
 
 @pytest.mark.parametrize("precision", ["bf16", "int8", "int4"])
-@pytest.mark.parametrize("model", ["moss", "vibevoice"])
+@pytest.mark.parametrize("model", ["moss", "vibevoice", "voxtral", "voxtral-small"])
 def test_published_checkpoint(model, precision, meeting_excerpt, tmp_path):
-    # Separate processes release Metal memory between models.
+    # Separate processes release Metal memory between models, including the 24B BF16 weights.
     proc = subprocess.run(
         [sys.executable, "-m", "murmur.cli", "transcribe", str(meeting_excerpt), "--model", model,
          "--backend", "mlx", "--quantization", precision, "--no-diarize", "--json"],

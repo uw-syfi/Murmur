@@ -129,25 +129,25 @@ Client and server must share the draft directory (same machine).
 
 ## Apple Silicon Macs (MLX)
 
-Murmur runs greedy decoding locally for MOSS and VibeVoice. Create a Python 3.12 environment
+Murmur runs greedy decoding locally for all four models. Create a Python 3.12 environment
 and install the runtimes for the models you plan to use. These commands can share one environment.
 
 ```bash
 uv venv --python 3.12
-# VibeVoice
-uv pip install -e '.[mlx-vibevoice]'
+# VibeVoice and both Voxtral sizes
+uv pip install -e '.[mlx-vibevoice,mlx-voxtral]'
 # MOSS
 uv pip install -e . 'moss-transcribe-diarize[mlx-runtime] @ git+https://github.com/vanch007/mlx-MOSS-Transcribe-Diarize.git@d2546316f76e93947e8d99a17fb88652f8ad6ab2'
 ```
 
-Choose `--model moss` or `--model vibevoice`.
+Choose `--model moss`, `vibevoice`, `voxtral` (Mini 3B) or `voxtral-small` (24B).
 Each supports `--quantization bf16` (default), `int8` and `int4`. On first use,
 Murmur fetches the corresponding checkpoint from [efficient-speech on Hugging Face](https://huggingface.co/efficient-speech).
-For example, `vibevoice` with `int4` loads `efficient-speech/VibeVoice-ASR-MLX-INT4`.
+For example, `voxtral-small` with `int4` loads `efficient-speech/Voxtral-Small-24B-2507-MLX-INT4`.
 Use `--checkpoint` alone to select a local directory or another compatible Hub checkpoint in its stored precision.
 
 ```bash
-.venv/bin/murmur transcribe meeting.wav --backend mlx --model vibevoice --quantization int4 --no-diarize --json
+.venv/bin/murmur transcribe meeting.wav --backend mlx --model voxtral-small --quantization int4 --no-diarize --json
 ```
 
 ```python
@@ -158,12 +158,14 @@ with Murmur.load("vibevoice", backend="mlx", quantization="int8", diarize=False)
 ```
 
 Each model stays loaded across files and processes one chunk at a time. MOSS and VibeVoice
-generate speaker labels and timestamps. For speaker attribution across the recording, supply a timeline
+generate speaker labels and timestamps. Voxtral generates text and uses CPU Whisper for word
+times even with draft windows off. For speaker attribution across the recording, supply a timeline
 in Python or install the `diarize` extra, configure pyannote access, and omit `--no-diarize`.
 
-To run the six-checkpoint integration test, install both runtimes and the `test` extra,
+To run the 12-checkpoint integration test, install all three runtimes and the `test` extra,
 set `MURMUR_AMI_ES2004A` to the path of AMI’s `ES2004a.Mix-Headset.wav`, and run
-`.venv/bin/python -m pytest tests/test_mlx_checkpoints.py`.
+`.venv/bin/python -m pytest tests/test_mlx_checkpoints.py`. The test includes the 24B BF16
+checkpoint, which requires about 48 GB for weights plus inference memory.
 
 MOSS also supports quantizing an explicit unquantized checkpoint in memory. Supply both
 `--checkpoint` and `--quantization`. Available presets are affine integers (`int1`, `int2`,

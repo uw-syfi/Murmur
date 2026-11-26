@@ -15,6 +15,7 @@ import numpy as np
 import requests
 
 from .base import TranscriptModel
+from .mlx import MLXClient
 
 
 class VoxtralClient(TranscriptModel):
@@ -59,3 +60,26 @@ class VoxtralSmallClient(VoxtralClient):
     name = "voxtral-small"
     hf_id = "mistralai/Voxtral-Small-24B-2507"
     gpu_memory_utilization = 0.85  # 48 GB of weights; pyannote and Whisper-tiny need ~3 GB
+
+
+class MLXVoxtralClient(MLXClient, VoxtralClient):
+    def _load(self, checkpoint):
+        import mlx.core as mx
+        from mlx_voxtral import VoxtralProcessor, load_voxtral_model
+
+        model, _ = load_voxtral_model(checkpoint, dtype=mx.bfloat16)
+        self.processor = VoxtralProcessor.from_pretrained(checkpoint)
+        return model
+
+    def _generate(self, audio, budget):
+        inputs = self.processor.apply_transcrition_request(audio, language=self.language,
+                                                          sampling_rate=self.sample_rate)
+        ids = self.model.generate(input_ids=inputs.input_ids, input_features=inputs.input_features,
+                                  max_new_tokens=budget, repetition_penalty=1.0, temperature=0.0)
+        tokens = ids[0, inputs.input_ids.shape[1]:].tolist()
+        text = self.processor.decode(tokens, skip_special_tokens=True)
+        return text, "length" if len(tokens) == budget else None
+
+
+class MLXVoxtralSmallClient(MLXVoxtralClient, VoxtralSmallClient):
+    pass

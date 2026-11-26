@@ -28,7 +28,7 @@ def test_mlx_transcribes_chunks_with_one_unquantized_model(monkeypatch):
     assert model.client.model is None
 
 
-@pytest.mark.parametrize("options", [{"model": "voxtral"}, {"url": "http://localhost:8000"},
+@pytest.mark.parametrize("options", [{"model": "voxtral", "draft_windows": True}, {"url": "http://localhost:8000"},
                                      {"speculative": "ngram"}, {"batch_size": 2}])
 def test_mlx_rejects_unsupported_settings_before_loading(options):
     with pytest.raises(ValueError, match="MLX"):
