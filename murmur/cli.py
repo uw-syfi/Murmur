@@ -31,7 +31,8 @@ def _serve(a) -> int:
 def _transcribe(a) -> int:
     from .api import Murmur
     with Murmur.load(a.model, url=a.url, draft_dir=a.draft_dir, chunk_s=a.chunk_s, batch_size=a.batch_size,
-                     backend=a.backend, checkpoint=a.checkpoint, language=a.language, gpu=a.gpu, diarize=not a.no_diarize,
+                     backend=a.backend, checkpoint=a.checkpoint, quantization=a.quantization,
+                     language=a.language, gpu=a.gpu, diarize=not a.no_diarize,
                      draft_windows=None if a.draft_windows == "auto" else a.draft_windows == "on") as m:
         for f in a.files:
             t = m.transcribe(f, single_pass=a.single_pass)
@@ -62,6 +63,7 @@ def main(argv=None) -> int:
     t.add_argument("files", nargs="+")
     t.add_argument("--model", default="vibevoice", choices=MODEL_CHOICES)
     t.add_argument("--backend", choices=["vllm", "mlx"], default="vllm")
+    t.add_argument("--quantization", help="MLX weight format: int{1,2,3,4,5,6,8}, mxfp4, mxfp8, or nvfp4")
     t.add_argument("--checkpoint", help="MLX model directory or Hugging Face ID (default: unquantized MOSS)")
     t.add_argument("--url", default=None, help="running server; default: start one")
     t.add_argument("--draft-dir", default=None)

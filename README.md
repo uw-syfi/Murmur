@@ -151,6 +151,16 @@ with Murmur.load("moss", backend="mlx", diarize=False) as model:
     print(transcript.text)
 ```
 
+For weight-only quantization, add `--quantization int4` (Python: `quantization="int4"`).
+Murmur loads the original MLX checkpoint and quantizes the text backbone in memory, leaving
+the Whisper audio encoder and VQ adaptor in their original precision. This reduces resident
+weight size after loading; disk size and the initial download are unchanged. Load an already
+quantized checkpoint with `--checkpoint` alone to use its stored format directly.
+
+Available presets are affine integers (`int1`, `int2`, `int3`, `int4`, `int5`, `int6`,
+`int8`, group size 64), `mxfp4` and `mxfp8` (group size 32), and `nvfp4` (group size 16).
+The 1–3 bit affine presets produced unusable transcripts in a short English smoke test on an M4 Max.
+
 To enable speculative decoding, install the draft dependencies and pass `--draft-windows on`:
 
 ```bash
