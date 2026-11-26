@@ -90,6 +90,23 @@ model) and speakers (from pyannote).
 
 A single pass over a model's max audio length is split into the fewest pieces that fit.
 
+### Supporting models
+
+| Component | Model | When Murmur uses it |
+|---|---|---|
+| Short-window ASR | Whisper tiny for English (`en`), Whisper small for Mandarin (`zh`), via `faster-whisper` | Produces timed words for speculative drafts. Both Voxtral models also need these word times when draft windows are off. |
+| Speaker segmentation | [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) | Detects speech and overlapping speakers within short windows when recording-wide diarization is enabled. |
+| Speaker embeddings | [pyannote/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM) | Represents each local speaker's voice so turns from the same speaker can be grouped across the recording. |
+
+The [pyannote 3.1 pipeline](https://huggingface.co/pyannote/speaker-diarization-3.1)
+combines segmentation, speaker embeddings, and agglomerative clustering. Murmur uses the
+resulting timeline to choose chunk boundaries, link VibeVoice and MOSS speaker labels
+across chunks, and assign speakers to Voxtral words. You can also supply a timeline
+in Python. [Transcription guide](docs/transcription.md#follow-speakers-across-chunks)
+
+The [Mac diarization benchmark](docs/benchmarks/pyannote-mac.md) compares pyannote
+with an experimental pipeline using Reverb Diarization V1 and NeMo TitaNet Small.
+
 ## Benchmarks
 
 `benchmarks/run.py` reproduces the paper's results, one model, dataset and system at a time.
