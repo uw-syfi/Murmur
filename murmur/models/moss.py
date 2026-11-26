@@ -8,20 +8,13 @@ from __future__ import annotations
 import io
 import re
 from pathlib import Path
-from threading import Lock
 from time import perf_counter
 
 import numpy as np
 import requests
 
 from .base import DiarizingModel, LocalSegment, Reply
-
-DEFAULT_CHECKPOINT = "vanch007/mlx-MOSS-Transcribe-Diarize"
-
-PACKED_CHECKPOINTS = {
-    "int4": "vanch007/mlx-MOSS-Transcribe-Diarize-4bit",
-    "int8": "vanch007/mlx-MOSS-Transcribe-Diarize-8bit",
-}
+from .mlx import MLXClient, published_checkpoint
 
 # (MLX mode, bits, group size) for weight-only quantization at load time.
 MLX_QUANTIZATION = {
@@ -102,37 +95,30 @@ class MossClient(MossModel):
         return args, env
 
 
-class MLXMossClient(MossModel):
-    def __init__(self, checkpoint: str | Path | None = None, quantization: str | None = None):
-        if quantization is not None and quantization not in MLX_QUANTIZATION:
-            raise ValueError(f"Unknown MLX quantization {quantization!r}. Choose from {', '.join(MLX_QUANTIZATION)}.")
+class MLXMossClient(MLXClient, MossModel):
+    def _load(self, checkpoint):
         try:
             from moss_transcribe_diarize.mlx import load_model
         except ImportError as exc:
             raise ImportError("Install the MOSS MLX runtime as described in the README.") from exc
-        if checkpoint is None and quantization in PACKED_CHECKPOINTS:
-            checkpoint = PACKED_CHECKPOINTS[quantization]
-            quantization = None  # The checkpoint config describes the packed layers.
-        self.model = load_model(checkpoint or DEFAULT_CHECKPOINT, strict=True)
-        if quantization is not None:
-            import mlx.core as mx
-            import mlx.nn as nn
+        return load_model(checkpoint, strict=True)
 
-            if any(isinstance(layer, (nn.QuantizedLinear, nn.QuantizedEmbedding)) for _, layer in self.model.named_modules()):
-                raise ValueError("Checkpoint is already quantized. Omit quantization to use its stored weights.")
-            mode, bits, group_size = MLX_QUANTIZATION[quantization]
-            nn.quantize(self.model, mode=mode, bits=bits, group_size=group_size,
-                        class_predicate=self.model.model_quant_predicate)
-            mx.eval(self.model.parameters())
-        self._lock = Lock()
+    def __init__(self, checkpoint: str | Path | None = None, quantization: str | None = None):
+        if quantization in (None, "bf16") or (checkpoint is None and quantization in ("int4", "int8")):
+            super().__init__(checkpoint, quantization)
+            return
+        if quantization not in MLX_QUANTIZATION:
+            raise ValueError(f"Unknown MLX quantization {quantization!r}.")
+        super().__init__(checkpoint or published_checkpoint(self.hf_id, "bf16"))
+        import mlx.core as mx
+        import mlx.nn as nn
 
-    def decode(self, audio, request_id=None, retries=3) -> Reply:
-        with self._lock:
-            if self.model is None:
-                raise RuntimeError("The MLX model is closed.")
-            start = perf_counter()
-            result = self.model.generate(audio, max_tokens=self.budget(audio), temperature=0.0)
-            return Reply(result.text, perf_counter() - start)
+        if any(isinstance(layer, (nn.QuantizedLinear, nn.QuantizedEmbedding)) for _, layer in self.model.named_modules()):
+            raise ValueError("Checkpoint is already quantized. Omit quantization to use its stored weights.")
+        mode, bits, group_size = MLX_QUANTIZATION[quantization]
+        nn.quantize(self.model, mode=mode, bits=bits, group_size=group_size,
+                    class_predicate=self.model.model_quant_predicate)
+        mx.eval(self.model.parameters())
 
     def decode_with_draft(self, audio, words, language, diar_segments, chunk_offset) -> Reply:
         with self._lock:
@@ -141,10 +127,6 @@ class MLXMossClient(MossModel):
             start = perf_counter()
             text, stats = _generate_with_draft(self.model, audio, words, language, diar_segments, chunk_offset, self.budget(audio))
             return Reply(text, perf_counter() - start, speculative=stats)
-
-    def close(self) -> None:
-        with self._lock:
-            self.model = None
 
 
 def verify_greedy(first, proposer, verify, rewind, eos, budget):
