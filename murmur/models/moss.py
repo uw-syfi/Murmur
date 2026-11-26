@@ -32,7 +32,7 @@ def parse_moss_transcript(text: str) -> list[tuple[float, float, str, str]]:
         return out
 
 
-class MossClient(DiarizingModel):
+class MossModel(DiarizingModel):
     name = "moss"
     hf_id = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
     sample_rate = 16_000
@@ -46,6 +46,18 @@ class MossClient(DiarizingModel):
     def budget(self, audio):
         return max(self.min_tokens, int(len(audio) / self.sample_rate * self.tokens_per_s))
 
+    def parse(self, text, keep_raw: bool = False):
+        return [LocalSegment(s, e, spk, t) for s, e, spk, t in parse_moss_transcript(text)]
+
+    def flagged(self, reply: Reply) -> bool:
+        if reply.failed:
+            return True
+        text = reply.text
+        cut_off = bool(text.strip()) and not _CLOSED_RE.search(text)
+        return cut_off or (bool(text.strip()) and not parse_moss_transcript(text))
+
+
+class MossClient(MossModel):
     def _post(self, audio, max_tokens, headers):
         import soundfile as sf
         buf = io.BytesIO()
@@ -58,16 +70,6 @@ class MossClient(DiarizingModel):
             headers=headers, timeout=self.timeout)
         r.raise_for_status()
         return r.json().get("text", "") or "", None
-
-    def parse(self, text, keep_raw: bool = False):
-        return [LocalSegment(s, e, spk, t) for s, e, spk, t in parse_moss_transcript(text)]
-
-    def flagged(self, reply: Reply) -> bool:
-        if reply.failed:
-            return True
-        text = reply.text
-        cut_off = bool(text.strip()) and not _CLOSED_RE.search(text)
-        return cut_off or (bool(text.strip()) and not parse_moss_transcript(text))
 
     @classmethod
     def server_args(cls, batch_size, speculative_config, single_pass: bool = False, gpu_memory_utilization=None):

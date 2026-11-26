@@ -26,6 +26,7 @@ class Reply:
     seconds: float
     finish: str | None = None
     failed: bool = False  # HTTP request failed after retries
+    speculative: dict[str, int] | None = None
 
 
 class ModelClient:
@@ -63,6 +64,9 @@ class ModelClient:
         self.url = url.rstrip("/")
         self.served_name = served_name or self.default_served_name()
         self.timeout = timeout
+
+    def close(self) -> None:
+        """Release resources owned by this client, if any."""
 
     def default_served_name(self) -> str:
         return self.hf_id

@@ -127,6 +127,44 @@ murmur transcribe meeting.wav --model vibevoice --url http://localhost:8000 --dr
 Client and server must share the draft directory (same machine).
 </details>
 
+## Apple Silicon Macs (MOSS prototype)
+
+From the repository root, create a local Python environment and install the MLX runtime:
+
+```bash
+uv venv --python 3.12
+uv pip install -e . 'moss-transcribe-diarize[mlx-runtime] @ git+https://github.com/vanch007/mlx-MOSS-Transcribe-Diarize.git@d2546316f76e93947e8d99a17fb88652f8ad6ab2'
+.venv/bin/murmur transcribe meeting.wav --model moss --backend mlx --no-diarize --json
+```
+
+The first run downloads the [unquantized MOSS checkpoint](https://huggingface.co/vanch007/mlx-MOSS-Transcribe-Diarize)
+(about 1.8 GB). To use a downloaded or self-converted directory, pass `--checkpoint /path/to/model`.
+The model stays loaded across files and decodes one chunk at a time. With `--no-diarize`, MOSS
+labels speakers within each chunk. To link speakers across chunks, supply a recording-wide timeline
+in Python or install the `diarize` extra, configure pyannote access as above, and omit `--no-diarize`.
+
+```python
+from murmur import Murmur
+
+with Murmur.load("moss", backend="mlx", diarize=False) as model:
+    transcript = model.transcribe("meeting.wav")
+    print(transcript.text)
+```
+
+To enable speculative decoding, install the draft dependencies and pass `--draft-windows on`:
+
+```bash
+uv pip install -e '.[drafts]'
+.venv/bin/murmur transcribe meeting.wav --model moss --backend mlx --draft-windows on --no-diarize --json
+```
+
+In Python, use `Murmur.load("moss", backend="mlx", draft_windows=True, diarize=False)`.
+Whisper runs on the CPU and supplies timestamped words to Murmur’s MOSS proposer. The MLX model
+checks up to eight proposed tokens per pass. JSON output includes proposed and accepted token counts
+and the number of verification passes in `stats.speculative`. The default for MOSS is greedy decoding.
+Use the same chunk size and diarization settings with `--draft-windows off` for a latency comparison.
+`--single-pass` selects the greedy baseline even when draft windows are enabled.
+
 ## Benchmarks
 
 `benchmarks/run.py` reproduces the paper's results, one model, dataset and system at a time.
