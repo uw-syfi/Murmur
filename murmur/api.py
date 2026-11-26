@@ -80,7 +80,8 @@ class Murmur:
         language       "en" or "zh"; picks the draft model (Whisper-tiny / Whisper-small).
         draft_dir      directory the client and server share for drafts (required with url=
                        and draft windows; it must match the server's MURMUR_DRAFT_DIR).
-        diarize        use pyannote for chunk boundaries and speaker linking (needs a HF token).
+        diarize        use pyannote for chunk boundaries and speaker linking. MLX downloads public
+                       weights. PyTorch needs access to the gated upstream weights.
         gpu_memory_utilization  share of the GPU the started server takes (default 0.70, leaving
                        room for pyannote and the draft model on the same GPU).
         """
@@ -108,9 +109,13 @@ class Murmur:
             if use_drafts or not client_cls.diarizes:
                 from .drafting.whisper_drafts import WhisperDrafter
                 drafter = WhisperDrafter(language, device="cpu", compute_type="int8")
+            mlx_diarizer = None
+            if diarize:
+                from .diarization.mlx import MLXDiarizer
+                mlx_diarizer = MLXDiarizer(hf_token)
             return cls(client, chunk_s=chunk_s, batch_size=1, language=language,
                        draft_windows=use_drafts, drafter=drafter,
-                       diarizer=Diarizer(hf_token) if diarize else None, keep_failed_output=keep_failed_output)
+                       diarizer=mlx_diarizer, keep_failed_output=keep_failed_output)
         if backend != "vllm":
             raise ValueError(f"Unknown backend {backend!r}; choose 'vllm' or 'mlx'.")
         if quantization is not None:
