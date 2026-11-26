@@ -1,6 +1,9 @@
 """CPU tests: output parsing, chunking, stitching and the drafter (no model, no GPU)."""
 
-from murmur.audio import chunk_bounds
+import numpy as np
+import torch
+
+from murmur.audio import SR, chunk_bounds, chunk_waveform
 from murmur.drafting.vllm_proposer import DraftTranscript, VibeVoiceDrafter
 from murmur.models import LocalSegment, MossClient, Reply, VibeVoiceClient, get_model
 from murmur.stitch import chunk_speaker_count, link_speakers, stitch
@@ -35,6 +38,13 @@ def test_moss_parse_and_flag():
 
 def test_model_names():
     assert get_model("vibevoice") is VibeVoiceClient and get_model("MOSS") is MossClient
+
+
+def test_chunk_waveform_shares_buffer_at_16k():
+    wav = torch.arange(SR * 10, dtype=torch.float32)
+    decode, draft = chunk_waveform(wav, 1.0, 3.0, SR)
+    assert decode is draft
+    assert np.allclose(decode, wav[SR:3 * SR].numpy())
 
 
 def test_chunk_bounds_follow_speech_regions():

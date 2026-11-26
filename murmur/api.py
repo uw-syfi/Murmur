@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .attribute import attribute
-from .audio import SR, Diarizer, Timer, chunk_bounds, load_audio, max_length_bounds, resample, slice_audio
+from .audio import SR, Diarizer, Timer, chunk_bounds, chunk_waveform, load_audio, max_length_bounds, slice_audio
 from .models import ModelClient, get_model
 from .stitch import chunk_speaker_count, stitch
 from .types import Transcript
@@ -177,7 +177,17 @@ class Murmur:
             jobs = [(r, a, b) for r in range(len(wavs))
                     for a, b in (max_length_bounds(durs[r], max_s, tls[r]) if single_pass
                                  else chunk_bounds(durs[r], self.chunk_s, tls[r]))]
-        arrays = [slice_audio(wavs[r], a, b, cs) for r, a, b in jobs]
+        use_drafts = self.draft_windows and not single_pass
+        need_short_asr = use_drafts or (text_model and self.drafter is not None)
+        arrays: list = []
+        draft_audio: list[np.ndarray | None] = [None] * len(jobs)
+        if need_short_asr:
+            for i, (r, a, b) in enumerate(jobs):
+                decode, drf = chunk_waveform(wavs[r], a, b, cs)
+                arrays.append(decode)
+                draft_audio[i] = drf
+        else:
+            arrays = [slice_audio(wavs[r], a, b, cs) for r, a, b in jobs]
         run_id = uuid.uuid4().hex[:8]
         keys = [f"{run_id}_{i}" for i in range(len(jobs))]
 
@@ -185,11 +195,10 @@ class Murmur:
         #    also needs the short-window ASR's word times, in single pass too.
         ready = None
         draft_thread = None
-        use_drafts = self.draft_windows and not single_pass
         local_decode = getattr(self.client, "decode_with_draft", None) if use_drafts else None
         local_drafts = [([], []) for _ in jobs] if local_decode else None
         asr_words: list = [[] for _ in jobs]
-        if use_drafts or (text_model and self.drafter is not None):
+        if need_short_asr:
             from .drafting.whisper_drafts import write_draft
             ready = [threading.Event() for _ in jobs] if use_drafts else None
 
@@ -197,7 +206,7 @@ class Murmur:
                 t0 = time.perf_counter()
                 for i, (r, a, b) in enumerate(jobs):
                     try:
-                        words = self.drafter(slice_audio(wavs[r], a, b, SR))
+                        words = self.drafter(draft_audio[i])
                         asr_words[i] = [(a + t, w) for t, w in words]
                         if use_drafts:
                             diar = ([list(t) for t in tls[r] if t[1] > a and t[0] < b]

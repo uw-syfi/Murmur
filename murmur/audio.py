@@ -124,6 +124,19 @@ def slice_audio(wav16: torch.Tensor, start: float, end: float, target_sr: int) -
     return resample(wav16[a:b], target_sr)
 
 
+def chunk_waveform(wav16: torch.Tensor, start: float, end: float, decode_sr: int) -> tuple[np.ndarray, np.ndarray]:
+    """One slice of ``[start, end)`` resampled for the model and for 16 kHz draft/ASR.
+
+    When ``decode_sr`` is 16 kHz, both arrays share the same buffer (MOSS, Voxtral).
+    """
+    a, b = int(start * SR), min(int(end * SR), wav16.shape[0])
+    chunk = wav16[a:b]
+    decode = resample(chunk, decode_sr)
+    if decode_sr == SR:
+        return decode, decode
+    return decode, resample(chunk, SR)
+
+
 class Timer:
     """Wall-clock stage timer: ``with t("vad"): ...``; ``t.stages`` maps name -> seconds."""
 
