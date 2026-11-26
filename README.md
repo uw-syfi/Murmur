@@ -99,6 +99,15 @@ A single pass over a model's max audio length is split into the fewest pieces th
 | Speaker segmentation | [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) |
 | Speaker embeddings | [pyannote/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM) |
 
+### Experimental diarization models
+
+These two models run together in a standalone Mac prototype. The Murmur CLI and Python API use the pyannote pipeline listed above.
+
+| Component | Prototype model |
+|---|---|
+| Speaker segmentation | Reverb Diarization V1 (INT8) |
+| Speaker embeddings | NeMo TitaNet Small |
+
 ## Benchmarks
 
 `benchmarks/run.py` reproduces the paper's results, one model, dataset and system at a time.
