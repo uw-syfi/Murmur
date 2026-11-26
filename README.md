@@ -127,47 +127,51 @@ murmur transcribe meeting.wav --model vibevoice --url http://localhost:8000 --dr
 Client and server must share the draft directory (same machine).
 </details>
 
-## Apple Silicon Macs (MOSS prototype)
+## Apple Silicon Macs (MLX)
 
-From the repository root, create a local Python environment and install the MLX runtime:
+Murmur runs greedy decoding locally for MOSS and VibeVoice. Create a Python 3.12 environment
+and install the runtimes for the models you plan to use. These commands can share one environment.
 
 ```bash
 uv venv --python 3.12
+# VibeVoice
+uv pip install -e '.[mlx-vibevoice]'
+# MOSS
 uv pip install -e . 'moss-transcribe-diarize[mlx-runtime] @ git+https://github.com/vanch007/mlx-MOSS-Transcribe-Diarize.git@d2546316f76e93947e8d99a17fb88652f8ad6ab2'
-.venv/bin/murmur transcribe meeting.wav --model moss --backend mlx --no-diarize --json
 ```
 
-The first run downloads the [BF16 MOSS checkpoint](https://huggingface.co/efficient-speech/MOSS-Transcribe-Diarize-MLX-BF16)
-(about 1.8 GB). To use a downloaded or self-converted directory, pass `--checkpoint /path/to/model`.
-The model stays loaded across files and decodes one chunk at a time. With `--no-diarize`, MOSS
-labels speakers within each chunk. To link speakers across chunks, supply a recording-wide timeline
-in Python or install the `diarize` extra, configure pyannote access as above, and omit `--no-diarize`.
+Choose `--model moss` or `--model vibevoice`.
+Each supports `--quantization bf16` (default), `int8` and `int4`. On first use,
+Murmur fetches the corresponding checkpoint from [efficient-speech on Hugging Face](https://huggingface.co/efficient-speech).
+For example, `vibevoice` with `int4` loads `efficient-speech/VibeVoice-ASR-MLX-INT4`.
+Use `--checkpoint` alone to select a local directory or another compatible Hub checkpoint in its stored precision.
+
+```bash
+.venv/bin/murmur transcribe meeting.wav --backend mlx --model vibevoice --quantization int4 --no-diarize --json
+```
 
 ```python
 from murmur import Murmur
 
-with Murmur.load("moss", backend="mlx", diarize=False) as model:
-    transcript = model.transcribe("meeting.wav")
-    print(transcript.text)
+with Murmur.load("vibevoice", backend="mlx", quantization="int8", diarize=False) as model:
+    print(model.transcribe("meeting.wav").text)
 ```
 
-Choose `--quantization bf16` (default), `int8` or `int4` to download the corresponding
-MOSS checkpoint from `efficient-speech`. Python accepts the same values in `Murmur.load(..., quantization="int4")`.
-Both packed checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
+Each model stays loaded across files and processes one chunk at a time. MOSS and VibeVoice
+generate speaker labels and timestamps. For speaker attribution across the recording, supply a timeline
+in Python or install the `diarize` extra, configure pyannote access, and omit `--no-diarize`.
 
-```bash
-.venv/bin/murmur transcribe meeting.wav --model moss --backend mlx --quantization int4 --no-diarize
-```
+To run the six-checkpoint integration test, install both runtimes and the `test` extra,
+set `MURMUR_AMI_ES2004A` to the path of AMI’s `ES2004a.Mix-Headset.wav`, and run
+`.venv/bin/python -m pytest tests/test_mlx_checkpoints.py`.
 
-To load your own **packed** checkpoint, pass its local directory or Hugging Face ID via
-`--checkpoint` alone. To quantize explicit **unquantized** weights in memory, supply both
-`--checkpoint` and `--quantization`. Other presets quantize the selected weights at load time.
+MOSS also supports quantizing an explicit unquantized checkpoint in memory. Supply both
+`--checkpoint` and `--quantization`. Available presets are affine integers (`int1`, `int2`,
+`int3`, `int4`, `int5`, `int6`, `int8`, group size 64), `mxfp4` and `mxfp8` (group size 32),
+and `nvfp4` (group size 16). The 1–3 bit affine presets produced unusable transcripts in a
+short English smoke test on an M4 Max.
 
-Available presets are affine integers (`int1`, `int2`, `int3`, `int4`, `int5`, `int6`,
-`int8`, group size 64), `mxfp4` and `mxfp8` (group size 32), and `nvfp4` (group size 16).
-The 1–3 bit affine presets produced unusable transcripts in a short English smoke test on an M4 Max.
-
-To enable speculative decoding, install the draft dependencies and pass `--draft-windows on`:
+To enable MOSS speculative decoding, install the draft dependencies and pass `--draft-windows on`:
 
 ```bash
 uv pip install -e '.[drafts]'

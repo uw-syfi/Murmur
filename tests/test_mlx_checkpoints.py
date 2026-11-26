@@ -24,7 +24,7 @@ def meeting_excerpt(tmp_path_factory):
 
 
 @pytest.mark.parametrize("precision", ["bf16", "int8", "int4"])
-@pytest.mark.parametrize("model", ["moss"])
+@pytest.mark.parametrize("model", ["moss", "vibevoice"])
 def test_published_checkpoint(model, precision, meeting_excerpt, tmp_path):
     # Separate processes release Metal memory between models.
     proc = subprocess.run(
