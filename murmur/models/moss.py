@@ -18,6 +18,19 @@ from .base import DiarizingModel, LocalSegment, Reply
 
 DEFAULT_CHECKPOINT = "vanch007/mlx-MOSS-Transcribe-Diarize"
 
+PACKED_CHECKPOINTS = {
+    "int4": "vanch007/mlx-MOSS-Transcribe-Diarize-4bit",
+    "int8": "vanch007/mlx-MOSS-Transcribe-Diarize-8bit",
+}
+
+# (MLX mode, bits, group size) for weight-only quantization at load time.
+MLX_QUANTIZATION = {
+    **{f"int{bits}": ("affine", bits, 64) for bits in (1, 2, 3, 4, 5, 6, 8)},
+    "mxfp4": ("mxfp4", 4, 32),
+    "mxfp8": ("mxfp8", 8, 32),
+    "nvfp4": ("nvfp4", 4, 16),
+}
+
 _SEG_RE = re.compile(r"\[(\d+(?:\.\d+)?)\]\[(S\d+)\](.*?)\[(\d+(?:\.\d+)?)\]"
                      r"(?=\s*\[\d+(?:\.\d+)?\]\[S\d+\]|\s*$)", re.DOTALL)
 _CLOSED_RE = re.compile(r"\[\d+(?:\.\d+)?\]\s*$")
@@ -90,12 +103,27 @@ class MossClient(MossModel):
 
 
 class MLXMossClient(MossModel):
-    def __init__(self, checkpoint: str | Path | None = None):
+    def __init__(self, checkpoint: str | Path | None = None, quantization: str | None = None):
+        if quantization is not None and quantization not in MLX_QUANTIZATION:
+            raise ValueError(f"Unknown MLX quantization {quantization!r}. Choose from {', '.join(MLX_QUANTIZATION)}.")
         try:
             from moss_transcribe_diarize.mlx import load_model
         except ImportError as exc:
             raise ImportError("Install the MOSS MLX runtime as described in the README.") from exc
+        if checkpoint is None and quantization in PACKED_CHECKPOINTS:
+            checkpoint = PACKED_CHECKPOINTS[quantization]
+            quantization = None  # The checkpoint config describes the packed layers.
         self.model = load_model(checkpoint or DEFAULT_CHECKPOINT, strict=True)
+        if quantization is not None:
+            import mlx.core as mx
+            import mlx.nn as nn
+
+            if any(isinstance(layer, (nn.QuantizedLinear, nn.QuantizedEmbedding)) for _, layer in self.model.named_modules()):
+                raise ValueError("Checkpoint is already quantized. Omit quantization to use its stored weights.")
+            mode, bits, group_size = MLX_QUANTIZATION[quantization]
+            nn.quantize(self.model, mode=mode, bits=bits, group_size=group_size,
+                        class_predicate=self.model.model_quant_predicate)
+            mx.eval(self.model.parameters())
         self._lock = Lock()
 
     def decode(self, audio, request_id=None, retries=3) -> Reply:

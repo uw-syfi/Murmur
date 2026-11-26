@@ -87,3 +87,41 @@ def test_local_drafts_stay_with_their_chunk(monkeypatch):
     ]
     assert transcript.stats["speculative"] == {"proposed": 8, "accepted": 4, "verification_calls": 6}
     assert baseline.stats["n_chunks"] == 1 and "speculative" not in baseline.stats
+
+
+def test_mlx_quantization_uses_model_layer_selection(monkeypatch):
+    from murmur.models.moss import MLXMossClient
+
+    model = Mock()
+    model.named_modules.return_value = []
+    nn = SimpleNamespace(QuantizedLinear=type("Linear", (), {}), QuantizedEmbedding=type("Embedding", (), {}),
+                         quantize=Mock())
+    core = SimpleNamespace(eval=Mock())
+    monkeypatch.setitem(sys.modules, "mlx", SimpleNamespace(nn=nn, core=core))
+    monkeypatch.setitem(sys.modules, "mlx.nn", nn)
+    monkeypatch.setitem(sys.modules, "mlx.core", core)
+    monkeypatch.setitem(sys.modules, "moss_transcribe_diarize.mlx", SimpleNamespace(load_model=Mock(return_value=model)))
+    with Murmur.load("moss", backend="mlx", checkpoint="weights", quantization="int4", diarize=False):
+        nn.quantize.assert_called_once_with(model, mode="affine", bits=4, group_size=64,
+                                            class_predicate=model.model_quant_predicate)
+        core.eval.assert_called_once_with(model.parameters.return_value)
+
+    model.named_modules.return_value = [("layer", nn.QuantizedLinear())]
+    with pytest.raises(ValueError, match="already quantized"):
+        MLXMossClient("weights", "int4")
+
+
+def test_reject_invalid_quantization_before_loading():
+    with pytest.raises(ValueError, match="Unknown MLX quantization"):
+        Murmur.load("moss", backend="mlx", quantization="int7")
+    with pytest.raises(ValueError, match="MLX backend option"):
+        Murmur.load("moss", backend="vllm", quantization="int4")
+
+
+@pytest.mark.parametrize("bits", [4, 8])
+def test_mlx_selects_published_quantized_checkpoint(monkeypatch, bits):
+    loader = Mock()
+    monkeypatch.setitem(sys.modules, "moss_transcribe_diarize.mlx", SimpleNamespace(load_model=loader))
+    with Murmur.load("moss", backend="mlx", quantization=f"int{bits}", diarize=False):
+        loader.assert_called_once_with(f"vanch007/mlx-MOSS-Transcribe-Diarize-{bits}bit", strict=True)
+        loader.return_value.named_modules.assert_not_called()

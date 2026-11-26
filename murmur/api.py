@@ -59,13 +59,15 @@ class Murmur:
              diarize: bool = True, hf_token: str | None = None, served_name: str | None = None,
              server_log: str | Path | None = None, single_pass_server: bool = False,
              gpu_memory_utilization: float | None = None, keep_failed_output: bool = False,
-             backend: str = "vllm", checkpoint: str | Path | None = None) -> "Murmur":
+             backend: str = "vllm", checkpoint: str | Path | None = None,
+             quantization: str | None = None) -> "Murmur":
         """Load a model.
 
         model          "vibevoice" (VibeVoice-ASR), "moss" (MOSS-Transcribe-Diarize), "voxtral"
                        (Voxtral-Mini-3B) or "voxtral-small" (Voxtral-Small-24B).
         backend        "vllm" (default) or "mlx" for local MOSS inference on Apple Silicon.
-        checkpoint     MLX model directory or Hub ID; defaults to unquantized MOSS.
+        quantization   MLX weight format; int4/int8 select packed MOSS weights when checkpoint is omitted.
+        checkpoint     optional MLX model directory or Hub ID overriding automatic checkpoint selection.
         url            an already running server (``murmur serve``); otherwise one is started
                        with the ``vllm`` of this model's environment (see :mod:`murmur.server`).
         draft_windows  speculative decoding from 30 s draft windows; default on for VibeVoice-ASR
@@ -99,12 +101,14 @@ class Murmur:
             if use_drafts:
                 from .drafting.whisper_drafts import WhisperDrafter
                 drafter = WhisperDrafter(language, device="cpu", compute_type="int8")
-            client = MLXMossClient(checkpoint)
+            client = MLXMossClient(checkpoint, quantization)
             return cls(client, chunk_s=chunk_s, batch_size=1, language=language,
                        draft_windows=use_drafts, drafter=drafter,
                        diarizer=Diarizer(hf_token) if diarize else None, keep_failed_output=keep_failed_output)
         if backend != "vllm":
             raise ValueError(f"Unknown backend {backend!r}; choose 'vllm' or 'mlx'.")
+        if quantization is not None:
+            raise ValueError("quantization is an MLX backend option.")
         if checkpoint is not None:
             raise ValueError("checkpoint is an MLX backend option.")
         if batch_size is None:

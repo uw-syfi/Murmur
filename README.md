@@ -151,6 +151,22 @@ with Murmur.load("moss", backend="mlx", diarize=False) as model:
     print(transcript.text)
 ```
 
+Use `--quantization int4` or `--quantization int8` to download the existing packed MOSS
+checkpoint directly. Python accepts the same values in `Murmur.load(..., quantization="int4")`.
+Both checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
+
+```bash
+.venv/bin/murmur transcribe meeting.wav --model moss --backend mlx --quantization int4 --no-diarize
+```
+
+To load your own **packed** checkpoint, pass its local directory or Hugging Face ID via
+`--checkpoint` alone. To quantize explicit **unquantized** weights in memory, supply both
+`--checkpoint` and `--quantization`. Other presets quantize the selected weights at load time.
+
+Available presets are affine integers (`int1`, `int2`, `int3`, `int4`, `int5`, `int6`,
+`int8`, group size 64), `mxfp4` and `mxfp8` (group size 32), and `nvfp4` (group size 16).
+The 1–3 bit affine presets produced unusable transcripts in a short English smoke test on an M4 Max.
+
 To enable speculative decoding, install the draft dependencies and pass `--draft-windows on`:
 
 ```bash
