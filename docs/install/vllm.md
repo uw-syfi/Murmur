@@ -17,6 +17,12 @@ python -m pip install -e '.[all]'
 For the published client release, install `murmur-asr[all]` from PyPI. The
 examples here follow the source checkout.
 
+Accept the model terms for [speaker diarization](https://huggingface.co/pyannote/speaker-diarization-3.1)
+and [segmentation](https://huggingface.co/pyannote/segmentation-3.0), then set `HF_TOKEN`
+in your shell to a Hugging Face read token with access to both models.
+With pyannote.audio 4.1.1, also accept the [Community-1 terms](https://huggingface.co/pyannote/speaker-diarization-community-1)
+for the files that version downloads during setup.
+
 ## Install the MOSS server and transcribe a file
 
 Run these commands from the Murmur checkout in the same shell. The project tested
@@ -30,17 +36,13 @@ python -m pip install -e '.[server]'
 export MURMUR_VLLM_MOSS="$CONDA_PREFIX/bin/vllm"
 
 conda activate murmur
-murmur transcribe meeting.wav --model moss --backend vllm --no-diarize
+murmur transcribe meeting.wav --model moss --backend vllm
 ```
 
 Replace `meeting.wav` with the path to your recording. Murmur starts the model
 server, prints timestamped speaker turns, and stops the server when the command
 exits. In a new shell, set `MURMUR_VLLM_MOSS` again to the absolute path of the
 server environment's `vllm` executable.
-
-For speaker labels that follow people across chunks, accept the pyannote model
-terms, set `HF_TOKEN` to a Hugging Face read token, and omit `--no-diarize`.
-[pyannote model terms](https://huggingface.co/pyannote/speaker-diarization-3.1) · [Transcription guide](../transcription.md)
 
 ## Use a different model
 
@@ -57,7 +59,7 @@ python -m pip install -e '.[server]'
 export MURMUR_VLLM_VIBEVOICE="$CONDA_PREFIX/bin/vllm"
 
 conda activate murmur
-murmur transcribe meeting.wav --model vibevoice --backend vllm --no-diarize
+murmur transcribe meeting.wav --model vibevoice --backend vllm
 ```
 
 **Voxtral Mini and Small** use vLLM 0.14. Set `MURMUR_VLLM_VOXTRAL` to the
@@ -80,5 +82,5 @@ read the client's drafts:
 
 ```bash
 conda activate murmur
-murmur transcribe meeting.wav --model vibevoice --url http://localhost:8000 --draft-dir /tmp/murmur_drafts --no-diarize
+murmur transcribe meeting.wav --model vibevoice --url http://localhost:8000 --draft-dir /tmp/murmur_drafts
 ```

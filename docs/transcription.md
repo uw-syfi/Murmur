@@ -10,13 +10,13 @@ For Apple Silicon, select `mlx`. For an NVIDIA GPU, change the backend to `vllm`
 Replace `meeting.wav` with your audio file.
 
 ```bash
-murmur transcribe meeting.wav --model moss --backend mlx --no-diarize
+murmur transcribe meeting.wav --model moss --backend mlx
 ```
 
 For JSON, add `--json`. To save one transcript, redirect standard output to a file.
 
 ```bash
-murmur transcribe meeting.wav --model moss --backend mlx --no-diarize --json > meeting.json
+murmur transcribe meeting.wav --model moss --backend mlx --json > meeting.json
 ```
 
 You can supply several paths in one invocation to keep the model loaded. With
@@ -31,7 +31,7 @@ for subsequent files. Each call returns a `Transcript`.
 ```python
 from murmur import Murmur
 
-with Murmur.load("moss", backend="mlx", diarize=False) as model:
+with Murmur.load("moss", backend="mlx") as model:
     transcript = model.transcribe("meeting.wav")
     print(transcript)       # One line per speaker turn
     print(transcript.text)  # The words in time order
@@ -45,16 +45,6 @@ distinct speaker labels, or `transcript.to_dict()` for the same fields as the CL
 | `duration_s` | Total duration of the input recording in seconds. |
 | `segments` | Speaker turns in time order. Each has a `speaker` label, `start` and `end` in seconds from the start of the recording, and the transcribed `text`. |
 | `stats` | Processing details, including the number of chunks, the number flagged as failed, and time spent in each stage. |
-
-## Follow speakers across chunks
-
-With `--no-diarize` (Python: `diarize=False`), MOSS assigns speaker labels within
-each chunk. A label such as `c002:S01` identifies a speaker in that chunk. For
-consistent labels across an entire recording, configure pyannote as described in
-your installation guide and omit the flag. Murmur uses its timeline to link
-speaker labels between chunks. If you already have a timeline, pass a list of
-`(start_seconds, end_seconds, speaker_label)` tuples to
-`model.transcribe("meeting.wav", timeline=timeline)` with `diarize=False`.
 
 ## Adjust decoding
 

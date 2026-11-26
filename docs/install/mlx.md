@@ -8,25 +8,26 @@ git clone https://github.com/uw-syfi/Murmur.git
 cd Murmur
 uv venv --python 3.12
 source .venv/bin/activate
-uv pip install -e . 'moss-transcribe-diarize[mlx-runtime] @ git+https://github.com/vanch007/mlx-MOSS-Transcribe-Diarize.git@d2546316f76e93947e8d99a17fb88652f8ad6ab2'
+uv pip install -e '.[diarize]' 'moss-transcribe-diarize[mlx-runtime] @ git+https://github.com/vanch007/mlx-MOSS-Transcribe-Diarize.git@d2546316f76e93947e8d99a17fb88652f8ad6ab2'
 ```
+
+Accept the model terms for [speaker diarization](https://huggingface.co/pyannote/speaker-diarization-3.1)
+and [segmentation](https://huggingface.co/pyannote/segmentation-3.0), then set `HF_TOKEN`
+in your shell to a Hugging Face read token with access to both models.
+With pyannote.audio 4.1.1, also accept the [Community-1 terms](https://huggingface.co/pyannote/speaker-diarization-community-1)
+for the files that version downloads during setup.
 
 ## Transcribe a file
 
 Replace `meeting.wav` with the path to a recording on your Mac.
 
 ```bash
-murmur transcribe meeting.wav --model moss --backend mlx --no-diarize
+murmur transcribe meeting.wav --model moss --backend mlx
 ```
 
-The first run downloads about 1.8 GB of model weights. MOSS processes one chunk at a
-time and prints each speaker turn with its start and end times. With `--no-diarize`,
-speaker IDs are local to each chunk. [Default MOSS checkpoint](https://huggingface.co/vanch007/mlx-MOSS-Transcribe-Diarize)
-
-To link speakers across the recording, run `uv pip install -e '.[diarize]'`, accept
-the pyannote model terms, and set `HF_TOKEN` to a Hugging Face read token. Then run
-the command again with `--no-diarize` removed. You can also supply a speaker timeline
-in Python. [pyannote model terms](https://huggingface.co/pyannote/speaker-diarization-3.1) · [Transcription guide](../transcription.md)
+The default MOSS checkpoint is about 1.8 GB. The first run also downloads the
+diarization models. Murmur prints each speaker turn with its start and end times.
+[Default MOSS checkpoint](https://huggingface.co/vanch007/mlx-MOSS-Transcribe-Diarize)
 
 ## Choose a checkpoint or precision
 
@@ -35,7 +36,7 @@ checkpoint directly. Python accepts the same values in `Murmur.load(..., quantiz
 Both checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
 
 ```bash
-murmur transcribe meeting.wav --model moss --backend mlx --quantization int4 --no-diarize
+murmur transcribe meeting.wav --model moss --backend mlx --quantization int4
 ```
 
 To load your own **packed** checkpoint, pass its local directory or Hugging Face ID via
@@ -52,10 +53,10 @@ Install the draft dependencies and enable draft windows.
 
 ```bash
 uv pip install -e '.[drafts]'
-murmur transcribe meeting.wav --model moss --backend mlx --draft-windows on --no-diarize --json
+murmur transcribe meeting.wav --model moss --backend mlx --draft-windows on --json
 ```
 
-In Python, use `Murmur.load("moss", backend="mlx", draft_windows=True, diarize=False)`.
+In Python, use `Murmur.load("moss", backend="mlx", draft_windows=True)`.
 Whisper runs on the CPU and supplies timestamped words to Murmur’s MOSS proposer. The MLX model
 checks up to eight proposed tokens per pass. JSON output includes proposed and accepted token counts
 and the number of verification passes in `stats.speculative`. The default for MOSS is greedy decoding.

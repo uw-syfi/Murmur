@@ -2,6 +2,12 @@
 
 [![arXiv](https://img.shields.io/badge/arXiv-2606.01483-b31b1b.svg)](https://arxiv.org/abs/2606.01483)
 
+## News
+
+- 2026/11/13: [Blog post](https://syfi.cs.washington.edu/blog/2026-11-13-murmur/) on Murmur is out.
+- 2026/11/04: [Preprint v2](https://arxiv.org/abs/2606.01483v2) is out.
+- 2026/06/01: [Preprint](https://arxiv.org/abs/2606.01483v1) is released on arXiv.
+
 Murmur is an inference system that serves long-context ASR models, such as **VibeVoice-ASR** and
 **MOSS-Transcribe-Diarize**, on long audio. These models transcribe an hour-long recording in a single
 pass, which is slow and can fail entirely on a repetition loop.
@@ -13,19 +19,18 @@ you created. Replace `meeting.wav` with the path to your recording.
 
 | Hardware | Setup | First command |
 |---|---|---|
-| Apple Silicon Mac | [Install MLX](docs/install/mlx.md) | `murmur transcribe meeting.wav --model moss --backend mlx --no-diarize` |
-| NVIDIA GPU | [Install vLLM](docs/install/vllm.md) | `murmur transcribe meeting.wav --model moss --backend vllm --no-diarize` |
+| Apple Silicon Mac | [Install MLX](docs/install/mlx.md) | `murmur transcribe meeting.wav --model moss --backend mlx` |
+| NVIDIA GPU | [Install vLLM](docs/install/vllm.md) | `murmur transcribe meeting.wav --model moss --backend vllm` |
 
-MOSS labels the speakers within each chunk. For a short recording, the output looks like this:
+MOSS prints timestamped speaker turns. Example output for a short recording:
 
 ```text
 == meeting.wav
-[   0.80-   3.20] S01: Should we start with the budget?
-[   3.45-   5.10] S02: Yes, I have the numbers here.
+[   0.80-   3.20] SPEAKER_00: Should we start with the budget?
+[   3.45-   5.10] SPEAKER_01: Yes, I have the numbers here.
 ```
 
-To keep speaker IDs consistent across a longer meeting, enable recording-wide diarization.
-For Python examples, JSON output, and speaker options, see the [transcription guide](docs/transcription.md).
+For Python examples and JSON output, see the [transcription guide](docs/transcription.md).
 
 ## How Murmur works
 
@@ -40,12 +45,6 @@ Overall, Murmur is **2.5x faster** than single pass on average (2.0-2.9x), end t
 diarization, and lowers tcpWER by 2.0 points on average.
 
 ![Hierarchical chunking](https://raw.githubusercontent.com/uw-syfi/Murmur/main/docs/figures/hierarchy.png)
-
-## News
-
-- 2026/11/13: [Blog post](https://syfi.cs.washington.edu/blog/2026-11-13-murmur/) on Murmur is out.
-- 2026/11/04: [Preprint v2](https://arxiv.org/abs/2606.01483v2) is out.
-- 2026/06/01: [Preprint](https://arxiv.org/abs/2606.01483v1) is released on arXiv.
 
 ## Demo
 
@@ -92,20 +91,13 @@ A single pass over a model's max audio length is split into the fewest pieces th
 
 ### Supporting models
 
-| Component | Model | When Murmur uses it |
-|---|---|---|
-| Short-window ASR | Whisper tiny for English (`en`), Whisper small for Mandarin (`zh`), via `faster-whisper` | Produces timed words for speculative drafts. Both Voxtral models also need these word times when draft windows are off. |
-| Speaker segmentation | [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) | Detects speech and overlapping speakers within short windows when recording-wide diarization is enabled. |
-| Speaker embeddings | [pyannote/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM) | Represents each local speaker's voice so turns from the same speaker can be grouped across the recording. |
-
-The [pyannote 3.1 pipeline](https://huggingface.co/pyannote/speaker-diarization-3.1)
-combines segmentation, speaker embeddings, and agglomerative clustering. Murmur uses the
-resulting timeline to choose chunk boundaries, link VibeVoice and MOSS speaker labels
-across chunks, and assign speakers to Voxtral words. You can also supply a timeline
-in Python. [Transcription guide](docs/transcription.md#follow-speakers-across-chunks)
-
-The [Mac diarization benchmark](docs/benchmarks/pyannote-mac.md) compares pyannote
-with an experimental pipeline using Reverb Diarization V1 and NeMo TitaNet Small.
+| Component | Supported model |
+|---|---|
+| Draft words and word times (English) | Whisper tiny via `faster-whisper` |
+| Draft words and word times (Mandarin) | Whisper small via `faster-whisper` |
+| Speaker diarization pipeline | [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) |
+| Speaker segmentation | [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) |
+| Speaker embeddings | [pyannote/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM) |
 
 ## Benchmarks
 
