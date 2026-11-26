@@ -18,6 +18,11 @@ from .base import DiarizingModel, LocalSegment, Reply
 
 DEFAULT_CHECKPOINT = "vanch007/mlx-MOSS-Transcribe-Diarize"
 
+PACKED_CHECKPOINTS = {
+    "int4": "vanch007/mlx-MOSS-Transcribe-Diarize-4bit",
+    "int8": "vanch007/mlx-MOSS-Transcribe-Diarize-8bit",
+}
+
 # (MLX mode, bits, group size) for weight-only quantization at load time.
 MLX_QUANTIZATION = {
     **{f"int{bits}": ("affine", bits, 64) for bits in (1, 2, 3, 4, 5, 6, 8)},
@@ -105,6 +110,9 @@ class MLXMossClient(MossModel):
             from moss_transcribe_diarize.mlx import load_model
         except ImportError as exc:
             raise ImportError("Install the MOSS MLX runtime as described in the README.") from exc
+        if checkpoint is None and quantization in PACKED_CHECKPOINTS:
+            checkpoint = PACKED_CHECKPOINTS[quantization]
+            quantization = None  # The checkpoint config describes the packed layers.
         self.model = load_model(checkpoint or DEFAULT_CHECKPOINT, strict=True)
         if quantization is not None:
             import mlx.core as mx

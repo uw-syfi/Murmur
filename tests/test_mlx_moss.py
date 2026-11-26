@@ -116,3 +116,12 @@ def test_reject_invalid_quantization_before_loading():
         Murmur.load("moss", backend="mlx", quantization="int7")
     with pytest.raises(ValueError, match="MLX backend option"):
         Murmur.load("moss", backend="vllm", quantization="int4")
+
+
+@pytest.mark.parametrize("bits", [4, 8])
+def test_mlx_selects_published_quantized_checkpoint(monkeypatch, bits):
+    loader = Mock()
+    monkeypatch.setitem(sys.modules, "moss_transcribe_diarize.mlx", SimpleNamespace(load_model=loader))
+    with Murmur.load("moss", backend="mlx", quantization=f"int{bits}", diarize=False):
+        loader.assert_called_once_with(f"vanch007/mlx-MOSS-Transcribe-Diarize-{bits}bit", strict=True)
+        loader.return_value.named_modules.assert_not_called()

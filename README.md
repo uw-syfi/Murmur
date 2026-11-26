@@ -151,11 +151,17 @@ with Murmur.load("moss", backend="mlx", diarize=False) as model:
     print(transcript.text)
 ```
 
-For weight-only quantization, add `--quantization int4` (Python: `quantization="int4"`).
-Murmur loads the original MLX checkpoint and quantizes the text backbone in memory, leaving
-the Whisper audio encoder and VQ adaptor in their original precision. This reduces resident
-weight size after loading; disk size and the initial download are unchanged. Load an already
-quantized checkpoint with `--checkpoint` alone to use its stored format directly.
+Use `--quantization int4` or `--quantization int8` to download the existing packed MOSS
+checkpoint directly. Python accepts the same values in `Murmur.load(..., quantization="int4")`.
+Both checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
+
+```bash
+.venv/bin/murmur transcribe meeting.wav --model moss --backend mlx --quantization int4 --no-diarize
+```
+
+To load your own **packed** checkpoint, pass its local directory or Hugging Face ID via
+`--checkpoint` alone. To quantize explicit **unquantized** weights in memory, supply both
+`--checkpoint` and `--quantization`. Other presets quantize the selected weights at load time.
 
 Available presets are affine integers (`int1`, `int2`, `int3`, `int4`, `int5`, `int6`,
 `int8`, group size 64), `mxfp4` and `mxfp8` (group size 32), and `nvfp4` (group size 16).
