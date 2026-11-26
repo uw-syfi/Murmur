@@ -67,7 +67,7 @@ def _add_pipeline_options(parser):
     parser.add_argument("--draft-dir", default=None)
     parser.add_argument("--draft-windows", choices=["auto", "on", "off"], default="auto")
     parser.add_argument("--chunk-s", type=float, default=330.0)
-    parser.add_argument("--batch-size", type=int, help="concurrent chunks (vLLM: 8, MLX: 1)")
+    parser.add_argument("--batch-size", type=int, help="concurrent chunks (defaults to 8 on vLLM and 1 on MLX; VibeVoice MLX supports batching with drafts)")
     parser.add_argument("--language", default="en", choices=["en", "zh"])
     parser.add_argument("--gpu", default=None)
     parser.add_argument("--no-diarize", action="store_true")

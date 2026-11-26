@@ -75,3 +75,29 @@ def test_vibevoice_routes_whisper_words_to_local_verifier(monkeypatch):
         tr = pipeline.transcribe(np.zeros(16000, dtype=np.float32), sr=16000)
     assert tr.text == "hello" and tr.stats["speculative"] == stats
     assert generate.call_args.args[2].dt.words == ["hello"]
+
+
+def test_vibevoice_batches_chunks_in_order_and_keeps_single_pass_serial(monkeypatch):
+    from murmur.models.base import Reply
+
+    model = Mock()
+    model.generate.return_value.text = "[]"
+    monkeypatch.setattr(MLXVibeVoiceClient, "_load", Mock(return_value=model))
+    whisper = Mock(side_effect=[[(0., w)] for w in ("one", "two", "three")])
+    monkeypatch.setattr(whisper_drafts, "WhisperDrafter", Mock(return_value=whisper))
+    groups = []
+
+    def batch(client, jobs, language):
+        words = [draft[0][1] for _, draft in jobs]
+        groups.append(words)
+        return [Reply('[{"Start":0,"End":1,"Speaker":0,"Content":"' + w + '"}]', 0.1) for w in words]
+
+    monkeypatch.setattr(MLXVibeVoiceClient, "decode_draft_batch", batch)
+    wave = np.zeros(3 * 16000, dtype=np.float32)
+    with Murmur.load("vibevoice", backend="mlx", batch_size=2, speculative="murmur",
+                     chunk_s=1, diarize=False) as pipeline:
+        result = pipeline.transcribe(wave, sr=16000)
+        pipeline.transcribe(wave, sr=16000, single_pass=True)
+    assert groups == [["one", "two"], ["three"]]
+    assert result.text == "one two three"
+    model.generate.assert_called_once()

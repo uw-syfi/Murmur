@@ -88,5 +88,19 @@ In Python, use `Murmur.load("moss", backend="mlx", draft_windows=True)`.
 Whisper runs on the CPU and supplies timestamped words to the selected model’s proposer. The MLX model
 checks up to eight proposed tokens per pass. JSON output includes proposed and accepted token counts
 and the number of verification passes in `stats.speculative`. Both MLX models default to greedy decoding.
+
+For long recordings on Apple silicon, VibeVoice can verify drafts across several target chunks
+in one GPU forward pass. MLX decodes one chunk at a time by default.
+
+```bash
+murmur transcribe meeting.wav --model vibevoice --backend mlx --draft-windows on --batch-size 4 --json
+```
+
+In Python, pass `speculative="murmur", batch_size=4` to `Murmur.load`. The batch size is a
+maximum. Each active chunk has its own KV cache, so increasing it uses more memory. A recording
+with one target chunk still runs at batch 1. In one warm M4 Max BF16 run on the 17.5-minute AMI
+ES2004a headset recording, four chunks took 350.8 s at batch 4 and 529.2 s at batch 1, including
+diarization. WER was 19.16% and 19.24%, respectively.
+
 Use the same chunk size and diarization settings with `--draft-windows off` for a latency comparison.
 `--single-pass` selects the greedy baseline even when draft windows are enabled.

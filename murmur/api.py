@@ -76,7 +76,8 @@ class Murmur:
         speculative    "murmur" enables Murmur proposals on MLX; on vLLM choose "murmur",
                        "ngram" (prompt lookup baseline) or None.
         chunk_s        target chunk length in seconds (330 in the paper).
-        batch_size     chunks decoded concurrently (and the server's --max-num-seqs).
+        batch_size     concurrent target chunks. MLX defaults to one and supports larger batches
+                       with VibeVoice draft windows. On vLLM this sets --max-num-seqs.
         language       "en" or "zh"; picks the draft model (Whisper-tiny / Whisper-small).
         draft_dir      directory the client and server share for drafts (required with url=
                        and draft windows; it must match the server's MURMUR_DRAFT_DIR).
@@ -96,11 +97,13 @@ class Murmur:
             if (any(x is not None for x in (url, vllm_bin, served_name, gpu, server_log, gpu_memory_utilization,
                                             draft_dir)) or single_pass_server):
                 raise ValueError("The MLX backend runs locally and does not accept server options.")
-            if batch_size not in (None, 1):
-                raise ValueError("Use batch_size=1 for local MLX generation.")
             if speculative not in (None, "murmur") or (speculative and draft_windows is False):
                 raise ValueError("MLX supports speculative='murmur' with draft windows enabled.")
             use_drafts = bool(draft_windows or speculative)
+            if batch_size is not None and batch_size < 1:
+                raise ValueError("batch_size must be positive.")
+            if batch_size not in (None, 1) and not (client_cls.name == "vibevoice" and use_drafts):
+                raise ValueError("Use batch_size=1 for MLX, or enable VibeVoice draft windows for batching.")
             if use_drafts and not hasattr(local_clients[client_cls.name], "decode_with_draft"):
                 raise ValueError("MLX speculative decoding is supported for MOSS and VibeVoice.")
             client = local_clients[client_cls.name](checkpoint, quantization)
@@ -113,7 +116,7 @@ class Murmur:
             if diarize:
                 from .diarization.mlx import MLXDiarizer
                 mlx_diarizer = MLXDiarizer(hf_token)
-            return cls(client, chunk_s=chunk_s, batch_size=1, language=language,
+            return cls(client, chunk_s=chunk_s, batch_size=batch_size or 1, language=language,
                        draft_windows=use_drafts, drafter=drafter,
                        diarizer=mlx_diarizer, keep_failed_output=keep_failed_output)
         if backend != "vllm":
@@ -250,7 +253,19 @@ class Murmur:
         if draft_thread is not None:
             draft_thread.start()
         try:
-            if self.batch_size == 1:
+            batch_decode = getattr(self.client, "decode_draft_batch", None)
+            if self.batch_size > 1 and batch_decode and local_decode:
+                # Read each draft just before its prefill, while Whisper works on later chunks.
+                def batch_inputs(start, end):
+                    for i in range(start, end):
+                        ready[i].wait()
+                        yield arrays[i], local_drafts[i][0]
+
+                replies = []
+                for start in range(0, len(jobs), self.batch_size):
+                    end = min(start + self.batch_size, len(jobs))
+                    replies.extend(batch_decode(batch_inputs(start, end), self.language))
+            elif self.batch_size == 1 or batch_decode:
                 # MLX streams belong to the thread that initializes the model.
                 replies = [decode(i) for i in range(len(jobs))]
             else:
