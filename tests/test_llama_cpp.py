@@ -57,7 +57,7 @@ def test_server_command_handles_gguf_pair_and_slot_context(tmp_path):
     build = server.llama_server_command
     cmd = build(client, port=9000, batch_size=2)
     assert cmd[cmd.index("-hf") + 1] == client.gguf_repo
-    assert cmd[cmd.index("--ctx-size") + 1] == str(2 * client.context_per_slot)
+    assert cmd[cmd.index("--ctx-size") + 1] == str(2 * client.context_for(330.0))
     model = tmp_path / "model.gguf"
     projector = tmp_path / "projector.gguf"
     model.touch()
@@ -66,6 +66,33 @@ def test_server_command_handles_gguf_pair_and_slot_context(tmp_path):
     projector.touch()
     cmd = build(client, port=9000, checkpoint=model, mmproj=projector, llama_bin="/opt/llama-server")
     assert cmd[:5] == ["/opt/llama-server", "-m", str(model), "--mmproj", str(projector)]
+
+
+@pytest.mark.parametrize("client", [llama_cpp.LlamaVibeVoiceClient, llama_cpp.LlamaVoxtralClient])
+def test_slot_context_fits_one_chunk_or_a_single_pass(client):
+    chunk, full = client.context_for(330.0), client.context_for(client.max_audio_s)
+    # prompt + audio embeddings + output budget, rounded up to 1 KiB tokens
+    assert chunk >= client.prompt_tokens + 330 * client.audio_tokens_per_s + client.budget_for(330.0)
+    assert chunk % 1024 == 0 and chunk <= 12288 < full
+    cmd = server.llama_server_command(client, port=9000, context_s=client.max_audio_s)
+    assert cmd[cmd.index("--ctx-size") + 1] == str(full)
+
+
+def test_vibevoice_loop_budget_scales_with_audio():
+    client = llama_cpp.LlamaVibeVoiceClient
+    assert client.budget_for(330.0) == 8250  # a looping chunk stops at about 8k tokens
+    assert client.budget_for(3600.0) == client.max_new_tokens  # single pass keeps the 32k cap
+
+
+def test_managed_server_sizes_slots_and_rejects_longer_audio(monkeypatch):
+    launch = Mock(return_value=Mock(url="http://local"))
+    monkeypatch.setattr(server, "LlamaServer", launch)
+    with Murmur.load("vibevoice", backend="llama.cpp", chunk_s=300.0, diarize=False) as pipeline:
+        assert launch.call_args.kwargs["context_s"] == 300.0
+        with pytest.raises(ValueError, match="single_pass_server"):
+            pipeline.client._post(np.zeros(24000 * 400, np.float32), 256, {})
+    with Murmur.load("vibevoice", backend="llama.cpp", single_pass_server=True, diarize=False):
+        assert launch.call_args.kwargs["context_s"] == llama_cpp.LlamaVibeVoiceClient.max_audio_s
 
 
 def test_cpu_only_places_every_local_model_on_cpu(monkeypatch):

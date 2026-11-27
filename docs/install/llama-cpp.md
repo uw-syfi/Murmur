@@ -24,7 +24,10 @@ is set. Voxtral's GGUF target uses the model's transcription tokens and the requ
 
 Use `--checkpoint org/repo:Q4_K_M` to select a Hub quantization, or supply both local files.
 The backend uses greedy decoding. `--batch-size` controls concurrent chunks and managed server
-slots (default 1). Each additional slot reserves another context. MOSS and speculative draft
+slots (default 1). Each slot reserves a context sized for one target chunk (`--chunk-s`, default 330 s),
+about 11k tokens for VibeVoice and 6k for Voxtral. A single pass needs a larger context: pass
+`--single-pass` (Python: `single_pass_server=True`) so the server is sized for the model's longest
+recording. MOSS and speculative draft
 verification are available through other Murmur backends.
 
 ```python

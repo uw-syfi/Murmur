@@ -16,10 +16,12 @@ def _serve(a) -> int:
     if a.backend in ("llama.cpp", "llama-cpp"):
         from .models.llama_cpp import llama_client
         from .server import llama_server_command
-        if a.speculative not in (None, "none") or a.vllm_bin or a.gpu_memory_utilization is not None or a.single_pass:
+        if a.speculative not in (None, "none") or a.vllm_bin or a.gpu_memory_utilization is not None:
             raise ValueError("Use greedy llama.cpp serving with GGUF weights")
-        cmd = llama_server_command(llama_client(client), port=a.port, batch_size=1 if a.batch_size is None else a.batch_size,
-                                   checkpoint=a.checkpoint, mmproj=a.mmproj, llama_bin=a.llama_bin, cpu_only=a.cpu_only)
+        client = llama_client(client)
+        cmd = llama_server_command(client, port=a.port, batch_size=1 if a.batch_size is None else a.batch_size,
+                                   checkpoint=a.checkpoint, mmproj=a.mmproj, llama_bin=a.llama_bin, cpu_only=a.cpu_only,
+                                   context_s=client.max_audio_s if a.single_pass else 330.0)
         os.execvp(cmd[0], cmd)
     if a.cpu_only or any(v is not None for v in (a.checkpoint, a.mmproj, a.llama_bin)):
         raise ValueError("The serve checkpoint, mmproj, llama-bin and cpu-only flags require --backend llama.cpp")
@@ -38,6 +40,7 @@ def _load_pipeline(a):
     return Murmur.load(a.model, url=a.url, draft_dir=a.draft_dir, chunk_s=a.chunk_s, batch_size=a.batch_size,
                        backend=a.backend, checkpoint=a.checkpoint, quantization=a.quantization,
                        mmproj=a.mmproj, llama_bin=a.llama_bin, served_name=a.served_name, cpu_only=a.cpu_only,
+                       single_pass_server=a.single_pass and a.backend in ("llama.cpp", "llama-cpp"),
                        language=a.language, gpu=a.gpu, diarize=not a.no_diarize,
                        draft_windows=None if a.draft_windows == "auto" else a.draft_windows == "on")
 
@@ -108,7 +111,8 @@ def main(argv=None) -> int:
     s.add_argument("--batch-size", type=int, help="parallel slots (vLLM: 8, llama.cpp: 1)")
     s.add_argument("--speculative", choices=["murmur", "ngram", "none"])
     s.add_argument("--draft-dir", default="/tmp/murmur_drafts", help="shared with the client")
-    s.add_argument("--single-pass", action="store_true", help="MOSS: settings for whole-recording requests")
+    s.add_argument("--single-pass", action="store_true",
+                   help="settings for whole-recording requests (MOSS on vLLM; llama.cpp sizes slots for one)")
     s.add_argument("--vllm-bin", default=None)
     s.add_argument("--gpu-memory-utilization", type=float, default=None,
                    help="share of the GPU for vLLM (default 0.70; raise it if the client runs elsewhere)")

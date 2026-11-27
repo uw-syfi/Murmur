@@ -100,7 +100,7 @@ class Murmur:
             client_cls = llama_client(client_cls)
             if draft_windows or speculative or draft_dir:
                 raise ValueError("The llama.cpp backend uses greedy decoding; disable speculative draft windows")
-            if any(v is not None for v in (gpu, gpu_memory_utilization, quantization, vllm_bin)) or single_pass_server:
+            if any(v is not None for v in (gpu, gpu_memory_utilization, quantization, vllm_bin)):
                 raise ValueError("Use a GGUF checkpoint to select llama.cpp weights and llama-server for device settings")
             if url and any(v is not None for v in (checkpoint, mmproj, llama_bin, server_log)):
                 raise ValueError("With url=, configure the checkpoint and llama.cpp server options on that server")
@@ -108,13 +108,17 @@ class Murmur:
             if batch_size < 1:
                 raise ValueError("batch_size must be positive")
             server = None
+            # Size each slot for one target chunk, or for the longest single pass on request.
+            context_s = client_cls.max_audio_s if single_pass_server else chunk_s
             if not url:
                 server = LlamaServer(client_cls, batch_size=batch_size, checkpoint=checkpoint, mmproj=mmproj,
-                                     llama_bin=llama_bin, log_path=server_log, served_name=served_name, cpu_only=cpu_only)
+                                     llama_bin=llama_bin, log_path=server_log, served_name=served_name, cpu_only=cpu_only,
+                                     context_s=context_s)
                 url = server.url
             try:
                 client = client_cls(url.rstrip("/").removesuffix("/v1"), served_name=served_name or client_cls.name)
                 client.language = language
+                client.context_s = context_s if server is not None else None
                 diarizer = Diarizer(hf_token, device="cpu" if cpu_only else None) if diarize else None
                 drafter = None
                 if not client_cls.diarizes:
