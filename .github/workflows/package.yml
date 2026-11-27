@@ -1,0 +1,51 @@
+name: Package
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and smoke-test wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - name: Build and validate distributions
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Exercise the installed wheel outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m venv smoke
+          source smoke/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install "$GITHUB_WORKSPACE"/dist/*.whl
+          python -m pip check
+          murmur --help
+          python - <<'PY'
+          from murmur import Murmur
+          from murmur.drafting import SITE_DIR
+
+          assert (SITE_DIR / "sitecustomize.py").is_file(), SITE_DIR
+          PY
+      - name: Check release tag against installed version
+        if: github.event_name == 'release'
+        working-directory: ${{ runner.temp }}
+        run: |
+          version=$(smoke/bin/python -c 'from importlib.metadata import version; print(version("murmur-asr"))')
+          test "${GITHUB_REF_NAME#v}" = "$version"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request' && github.event_name != 'push'
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error

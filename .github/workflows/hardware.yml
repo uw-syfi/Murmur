@@ -1,0 +1,95 @@
+name: Hardware inference
+
+on:
+  schedule:
+    - cron: '17 8 * * *'
+    - cron: '47 10 * * 0'
+  workflow_dispatch:
+    inputs:
+      suite:
+        type: choice
+        options: [smoke, full, benchmark]
+        default: smoke
+        description: Inference suite to run
+  workflow_call:
+    inputs:
+      suite:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  mlx:
+    if: vars.MURMUR_MLX_CI == 'true' && inputs.suite != 'benchmark' && github.event.schedule != '47 10 * * 0'
+    runs-on: [self-hosted, macOS, ARM64, murmur-mlx]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check AMI audio and run published checkpoints
+        env:
+          SUITE: ${{ inputs.suite }}
+        run: |
+          test -r "${MURMUR_AMI_ES2004A:?set the AMI recording path on the runner}"
+          target=tests/test_mlx_checkpoints.py
+          if [[ "$SUITE" != full ]]; then target+='::test_published_checkpoint[voxtral-int4]'; fi
+          "$MURMUR_CI_PYTHON" -m pytest -q "$target"
+
+  cuda:
+    if: vars.MURMUR_CUDA_CI == 'true' && inputs.suite != 'benchmark' && github.event.schedule != '47 10 * * 0'
+    runs-on: [self-hosted, linux, x64, murmur-cuda]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Start vLLM and transcribe the AMI excerpt
+        env:
+          SUITE: ${{ inputs.suite }}
+        run: |
+          test -r "${MURMUR_AMI_ES2004A:?set the AMI recording path on the runner}"
+          target=tests/vllm_smoke.py
+          if [[ "$SUITE" != full ]]; then target+='::test_vllm_transcription[vibevoice]'; fi
+          "$MURMUR_CI_PYTHON" -m pytest -q "$target"
+
+  benchmark:
+    if: vars.MURMUR_CUDA_CI == 'true' && (inputs.suite == 'benchmark' || github.event.schedule == '47 10 * * 0')
+    runs-on: [self-hosted, linux, x64, murmur-cuda]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Measure VibeVoice on ES2004a
+        run: |
+          nvidia-smi --query-gpu=name,driver_version --format=csv
+          "$MURMUR_CI_PYTHON" benchmarks/run.py --model vibevoice --dataset ami_ihm \
+            --meetings ES2004a --system murmur --mode latency --output results/ci
+          "$MURMUR_CI_PYTHON" - <<'PY'
+          import json
+          import math
+          import os
+          from pathlib import Path
+
+          stats = json.loads(Path("results/ci/summary.json").read_text())
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as report:
+              for key in ("tcpwer", "chunks_failed", "mean_latency_s"):
+                  print(f"- {key}: {stats[key]}", file=report)
+          assert stats["n_recordings"] == 1 and math.isfinite(stats["tcpwer"]), stats
+          assert stats["chunks_failed"] == 0, stats
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vibevoice-ami-es2004a
+          path: |
+            results/ci/results.jsonl
+            results/ci/summary.json
+          if-no-files-found: warn
