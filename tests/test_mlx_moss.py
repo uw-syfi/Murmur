@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 from murmur import Murmur
-from murmur.models.moss import DEFAULT_CHECKPOINT
 
 
 def test_mlx_transcribes_chunks_with_one_unquantized_model(monkeypatch):
@@ -20,7 +19,7 @@ def test_mlx_transcribes_chunks_with_one_unquantized_model(monkeypatch):
         result = model.transcribe(np.zeros(32_000, dtype=np.float32), sr=16_000,
                                   timeline=[(0, 1, "A"), (1, 2, "B")])
 
-    loader.assert_called_once_with(DEFAULT_CHECKPOINT, strict=True)
+    loader.assert_called_once_with("efficient-speech/MOSS-Transcribe-Diarize-MLX-BF16", strict=True)
     assert generate.call_count == 2
     assert generate.call_args.args[0].shape == (16_000,)
     assert generate.call_args.kwargs == {"max_tokens": 512, "temperature": 0.0}
@@ -123,5 +122,5 @@ def test_mlx_selects_published_quantized_checkpoint(monkeypatch, bits):
     loader = Mock()
     monkeypatch.setitem(sys.modules, "moss_transcribe_diarize.mlx", SimpleNamespace(load_model=loader))
     with Murmur.load("moss", backend="mlx", quantization=f"int{bits}", diarize=False):
-        loader.assert_called_once_with(f"vanch007/mlx-MOSS-Transcribe-Diarize-{bits}bit", strict=True)
+        loader.assert_called_once_with(f"efficient-speech/MOSS-Transcribe-Diarize-MLX-INT{bits}", strict=True)
         loader.return_value.named_modules.assert_not_called()

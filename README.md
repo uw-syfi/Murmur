@@ -137,7 +137,7 @@ uv pip install -e . 'moss-transcribe-diarize[mlx-runtime] @ git+https://github.c
 .venv/bin/murmur transcribe meeting.wav --model moss --backend mlx --no-diarize --json
 ```
 
-The first run downloads the [unquantized MOSS checkpoint](https://huggingface.co/vanch007/mlx-MOSS-Transcribe-Diarize)
+The first run downloads the [BF16 MOSS checkpoint](https://huggingface.co/efficient-speech/MOSS-Transcribe-Diarize-MLX-BF16)
 (about 1.8 GB). To use a downloaded or self-converted directory, pass `--checkpoint /path/to/model`.
 The model stays loaded across files and decodes one chunk at a time. With `--no-diarize`, MOSS
 labels speakers within each chunk. To link speakers across chunks, supply a recording-wide timeline
@@ -151,9 +151,9 @@ with Murmur.load("moss", backend="mlx", diarize=False) as model:
     print(transcript.text)
 ```
 
-Use `--quantization int4` or `--quantization int8` to download the existing packed MOSS
-checkpoint directly. Python accepts the same values in `Murmur.load(..., quantization="int4")`.
-Both checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
+Choose `--quantization bf16` (default), `int8` or `int4` to download the corresponding
+MOSS checkpoint from `efficient-speech`. Python accepts the same values in `Murmur.load(..., quantization="int4")`.
+Both packed checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
 
 ```bash
 .venv/bin/murmur transcribe meeting.wav --model moss --backend mlx --quantization int4 --no-diarize

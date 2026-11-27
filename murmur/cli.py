@@ -63,7 +63,7 @@ def main(argv=None) -> int:
     t.add_argument("files", nargs="+")
     t.add_argument("--model", default="vibevoice", choices=MODEL_CHOICES)
     t.add_argument("--backend", choices=["vllm", "mlx"], default="vllm")
-    t.add_argument("--quantization", help="MLX weight format; int4 and int8 select published packed weights by default")
+    t.add_argument("--quantization", help="select published MLX weights: bf16 (default), int8 or int4")
     t.add_argument("--checkpoint", help="override the MLX checkpoint with a local directory or Hugging Face ID")
     t.add_argument("--url", default=None, help="running server; default: start one")
     t.add_argument("--draft-dir", default=None)

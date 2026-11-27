@@ -66,7 +66,7 @@ class Murmur:
         model          "vibevoice" (VibeVoice-ASR), "moss" (MOSS-Transcribe-Diarize), "voxtral"
                        (Voxtral-Mini-3B) or "voxtral-small" (Voxtral-Small-24B).
         backend        "vllm" (default) or "mlx" for local MOSS inference on Apple Silicon.
-        quantization   MLX weight format; int4/int8 select packed MOSS weights when checkpoint is omitted.
+        quantization   MLX weight format; bf16/int4/int8 select published weights when checkpoint is omitted.
         checkpoint     optional MLX model directory or Hub ID overriding automatic checkpoint selection.
         url            an already running server (``murmur serve``); otherwise one is started
                        with the ``vllm`` of this model's environment (see :mod:`murmur.server`).
