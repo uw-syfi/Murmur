@@ -77,8 +77,3 @@ Use `cpu_only=True` in `Murmur.load`. For an existing server, run `murmur serve 
 on the server and use `--cpu-only --url URL` on the client. VibeVoice supplies its own segment timestamps
 and speaker labels and can run with `--no-diarize` without the diarization or Whisper extras.
 Murmur's Whisper-guided speculative draft verification is not implemented in the llama.cpp backend.
-
-To exercise the full managed pipeline on the deployment machine, set `MURMUR_AMI_ES2004A` to the
-ES2004a Mix-Headset WAV, install the test extra and run
-`MURMUR_TEST_LLAMA_CPU_MODEL=voxtral python -m pytest -q tests/test_llama_cpp.py`.
-Set `MURMUR_TEST_LLAMA_GGUF` and `MURMUR_TEST_LLAMA_MMPROJ` to use local weights for this test.

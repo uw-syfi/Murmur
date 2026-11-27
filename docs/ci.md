@@ -34,3 +34,13 @@ On CUDA, the runner user also needs Hugging Face access to pyannote.
 - Keep the benchmark on the same GPU so timings stay comparable.
 - Hardware jobs run the checked-out source against these provisioned dependencies. Use a runner
   group restricted to the trusted hardware workflow, or isolated ephemeral runners.
+
+## Run the hardware tests by hand
+
+These tests need the AMI ES2004a headset recording: set `MURMUR_AMI_ES2004A` to the path of
+`ES2004a.Mix-Headset.wav` and install the `test` extra.
+
+| Test | Setup | Command |
+|---|---|---|
+| All 12 MLX checkpoints | the three MLX runtimes from the [Apple Silicon setup](install/mlx.md); about 48 GB of memory for the 24B BF16 checkpoint plus inference | `python -m pytest tests/test_mlx_checkpoints.py` |
+| llama.cpp managed pipeline on CPU | the [CPU-only llama.cpp setup](install/llama-cpp.md#cpu-only-linux); set `MURMUR_TEST_LLAMA_GGUF` and `MURMUR_TEST_LLAMA_MMPROJ` to use local weights | `MURMUR_TEST_LLAMA_CPU_MODEL=voxtral python -m pytest -q tests/test_llama_cpp.py` |
