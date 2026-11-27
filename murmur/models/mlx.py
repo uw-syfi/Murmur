@@ -44,3 +44,30 @@ class MLXClient(ModelClient):
     def close(self) -> None:
         with self._lock:
             self.model = None
+
+
+def verify_greedy(first, proposer, verify, rewind, eos, budget):
+    """Keep the last emitted token pending. The cache holds everything before it."""
+    tokens = []
+    stats = {"proposed": 0, "accepted": 0, "verification_calls": 0}
+    if budget <= 0 or first in eos:
+        return tokens, stats
+    tokens.append(first)
+    while len(tokens) < budget:
+        # Leave room for the target's correction (or a bonus after a full match).
+        k = min(8, budget - len(tokens) - 1)
+        draft = proposer.propose(tokens, k)[:k] if k else []
+        predictions = verify([tokens[-1], *draft])
+        matched = 0
+        while matched < len(draft) and predictions[matched] == draft[matched]:
+            matched += 1
+        stats["verification_calls"] += 1
+        stats["proposed"] += len(draft)
+        stats["accepted"] += matched
+        if matched < len(draft):
+            rewind(len(draft) - matched)
+        for token in predictions[:matched + 1]:
+            if token in eos:
+                return tokens, stats
+            tokens.append(token)
+    return tokens, stats

@@ -58,3 +58,20 @@ def test_voxtral_decodes_on_loading_thread_and_attributes_words(monkeypatch, nam
     processor.decode.assert_called_once_with([77], skip_special_tokens=True)
     whisper.assert_called_once()
     assert result.text == "hello" and result.speakers == ["A"]
+
+
+def test_vibevoice_routes_whisper_words_to_local_verifier(monkeypatch):
+    from murmur.models import vibevoice
+
+    model = Mock(is_streaming_model=False)
+    model.tokenizer.encode.return_value = [1]
+    words = [(0.1, "hello")]
+    monkeypatch.setattr(MLXVibeVoiceClient, "_load", Mock(return_value=model))
+    monkeypatch.setattr(whisper_drafts, "WhisperDrafter", Mock(return_value=Mock(return_value=words)))
+    stats = dict(proposed=4, accepted=2, verification_calls=3)
+    generate = Mock(return_value=('[{"Start":0,"End":0.5,"Speaker":0,"Content":"hello"}]', stats))
+    monkeypatch.setattr(vibevoice, "_generate_with_draft", generate)
+    with Murmur.load("vibevoice", backend="mlx", speculative="murmur", diarize=False) as pipeline:
+        tr = pipeline.transcribe(np.zeros(16000, dtype=np.float32), sr=16000)
+    assert tr.text == "hello" and tr.stats["speculative"] == stats
+    assert generate.call_args.args[2].dt.words == ["hello"]
