@@ -89,9 +89,9 @@ model) and speakers (from pyannote).
 
 A single pass over a model's max audio length is split into the fewest pieces that fit.
 
-### Drafting and diarization models
+### Other drafting and supporting models
 
-| Component | Supported model |
+| Component | Model |
 |---|---|
 | Draft words and word times (English) | Whisper tiny via `faster-whisper` |
 | Draft words and word times (Mandarin) | Whisper small via `faster-whisper` |
@@ -141,4 +141,5 @@ Mandarin) with jiwer, cpWER and tcpWER (5 s collar) with MeetEval, DER with pyan
 
 Pull requests run CPU tests on Python 3.10 and 3.12 and check that the built wheel installs in a
 clean environment. Hardware jobs run inference nightly on Apple Silicon and CUDA. See
-[docs/ci.md](docs/ci.md) for the workflows and runner setup.
+[docs/ci.md](docs/ci.md) for the workflows and runner setup, and run the same suites locally with
+`scripts/test.sh`.

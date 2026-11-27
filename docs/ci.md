@@ -35,12 +35,24 @@ On CUDA, the runner user also needs Hugging Face access to pyannote.
 - Hardware jobs run the checked-out source against these provisioned dependencies. Use a runner
   group restricted to the trusted hardware workflow, or isolated ephemeral runners.
 
-## Run the hardware tests by hand
+## Run the CI suites locally
 
-These tests need the AMI ES2004a headset recording: set `MURMUR_AMI_ES2004A` to the path of
-`ES2004a.Mix-Headset.wav` and install the `test` extra.
+`scripts/test.sh` runs the same commands as the workflows. It uses `python` from your
+environment; set `PYTHON` to use another interpreter. Extra arguments go to pytest.
 
-| Test | Setup | Command |
+```bash
+scripts/test.sh            # CPU tests, as on every pull request
+scripts/test.sh package    # build the wheel and smoke-test it in a fresh virtualenv
+scripts/test.sh cpu -k stitch -x
+```
+
+| Suite | Runs | Needs |
 |---|---|---|
-| All 12 MLX checkpoints | the three MLX runtimes from the [Apple Silicon setup](install/mlx.md); about 48 GB of memory for the 24B BF16 checkpoint plus inference | `python -m pytest tests/test_mlx_checkpoints.py` |
-| llama.cpp managed pipeline on CPU | the [CPU-only llama.cpp setup](install/llama-cpp.md#cpu-only-linux); set `MURMUR_TEST_LLAMA_GGUF` and `MURMUR_TEST_LLAMA_MMPROJ` to use local weights | `MURMUR_TEST_LLAMA_CPU_MODEL=voxtral python -m pytest -q tests/test_llama_cpp.py` |
+| `cpu` (default) | CPU tests from CI | the `test` extra |
+| `package` | wheel build, `twine check`, clean install and `murmur --help` | network access for the CPU PyTorch wheels |
+| `mlx` / `mlx-full` | Voxtral Mini INT4 / all 12 MLX checkpoints | `MURMUR_AMI_ES2004A`, the three MLX runtimes from the [Apple Silicon setup](install/mlx.md); `mlx-full` needs about 48 GB of memory for the 24B BF16 checkpoint |
+| `cuda` / `cuda-full` | VibeVoice / all four models on vLLM | `MURMUR_AMI_ES2004A`, the `MURMUR_VLLM_*` executables from the [vLLM setup](install/vllm.md) |
+| `llama-cpu` | llama.cpp managed pipeline on CPU (Voxtral) | `MURMUR_AMI_ES2004A`, the [CPU-only llama.cpp setup](install/llama-cpp.md#cpu-only-linux); `MURMUR_TEST_LLAMA_GGUF` and `MURMUR_TEST_LLAMA_MMPROJ` select local weights |
+| `benchmark` | VibeVoice tcpWER and latency on AMI-IHM ES2004a, failing on any failed chunk | `MURMUR_DATA`, `MURMUR_VLLM_VIBEVOICE`, pyannote access |
+
+`MURMUR_AMI_ES2004A` is the path to AMI's `ES2004a.Mix-Headset.wav`.
