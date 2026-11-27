@@ -1,5 +1,6 @@
 """Local model routing and decoding contracts without Metal or model downloads."""
 
+import sys
 import threading
 from contextlib import nullcontext
 from types import SimpleNamespace
