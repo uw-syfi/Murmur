@@ -89,9 +89,9 @@ model) and speakers (from pyannote).
 
 A single pass over a model's max audio length is split into the fewest pieces that fit.
 
-### Drafting and diarization models
+### Other drafting and supporting models
 
-| Component | Supported model |
+| Component | Model |
 |---|---|
 | Draft words and word times (English) | Whisper tiny via `faster-whisper` |
 | Draft words and word times (Mandarin) | Whisper small via `faster-whisper` |
