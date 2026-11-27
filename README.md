@@ -69,7 +69,7 @@ corrected reference reader (2-6 points lower than earlier arXiv versions).</sub>
 
 ## Supported models
 
-The vLLM backend supports the four models below. The MLX backend supports MOSS on Apple Silicon.
+The vLLM backend supports the four models below. The MLX backend supports MOSS and VibeVoice on Apple Silicon.
 Draft window defaults in the tables apply to vLLM.
 
 **Diarizing ASR models** write the words, timestamps and speaker labels themselves.

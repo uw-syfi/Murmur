@@ -1,13 +1,17 @@
 # Install Murmur on Apple Silicon
 
-Murmur runs MOSS-Transcribe-Diarize locally with MLX. You'll need an Apple Silicon Mac,
-Git, and `uv`. From a fresh checkout, create and activate a Python 3.12 environment.
+Murmur runs MOSS-Transcribe-Diarize and VibeVoice-ASR locally with MLX. You'll need an Apple Silicon Mac,
+Git, and `uv`. From a fresh checkout, create and activate a Python 3.12 environment, then install the runtimes
+for the models you plan to use. These commands can share one environment.
 
 ```bash
 git clone https://github.com/uw-syfi/Murmur.git
 cd Murmur
 uv venv --python 3.12
 source .venv/bin/activate
+# VibeVoice
+uv pip install -e '.[diarize,mlx-vibevoice]'
+# MOSS
 uv pip install -e '.[diarize]' 'moss-transcribe-diarize[mlx-runtime] @ git+https://github.com/vanch007/mlx-MOSS-Transcribe-Diarize.git@d2546316f76e93947e8d99a17fb88652f8ad6ab2'
 ```
 
@@ -23,6 +27,7 @@ Replace `meeting.wav` with the path to a recording on your Mac.
 
 ```bash
 murmur transcribe meeting.wav --model moss --backend mlx
+murmur transcribe meeting.wav --model vibevoice --backend mlx
 ```
 
 The default MOSS checkpoint is about 1.8 GB. The first run also downloads the
@@ -31,25 +36,32 @@ diarization models. Murmur prints each speaker turn with its start and end times
 
 ## Choose a checkpoint or precision
 
-Choose `--quantization bf16` (default), `int8` or `int4` to download the corresponding
-MOSS checkpoint from `efficient-speech`. Python accepts the same values in `Murmur.load(..., quantization="int4")`.
-Both packed checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
+Both models support `--quantization bf16` (default), `int8` and `int4`. On first use, Murmur
+fetches the corresponding checkpoint from [efficient-speech on Hugging Face](https://huggingface.co/efficient-speech);
+for example, `vibevoice` with `int4` loads `efficient-speech/VibeVoice-ASR-MLX-INT4`.
+Python accepts the same values in `Murmur.load(..., quantization="int4")`. The packed MOSS
+checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
 
 ```bash
-murmur transcribe meeting.wav --model moss --backend mlx --quantization int4
+murmur transcribe meeting.wav --model vibevoice --backend mlx --quantization int4
 ```
 
 To load your own **packed** checkpoint, pass its local directory or Hugging Face ID via
-`--checkpoint` alone. To quantize explicit **unquantized** weights in memory, supply both
-`--checkpoint` and `--quantization`. Other presets quantize the selected weights at load time.
+`--checkpoint` alone; it loads in its stored precision. For MOSS, you can also quantize explicit
+**unquantized** weights in memory by supplying both `--checkpoint` and `--quantization`.
+Other presets quantize the selected weights at load time.
 
 Available presets are affine integers (`int1`, `int2`, `int3`, `int4`, `int5`, `int6`,
 `int8`, group size 64), `mxfp4` and `mxfp8` (group size 32), and `nvfp4` (group size 16).
 The 1–3 bit affine presets produced unusable transcripts in a short English smoke test on an M4 Max.
 
+To run the six-checkpoint integration test, install both runtimes and the `test` extra,
+set `MURMUR_AMI_ES2004A` to the path of AMI’s `ES2004a.Mix-Headset.wav`, and run
+`python -m pytest tests/test_mlx_checkpoints.py`.
+
 ## Enable speculative decoding
 
-Install the draft dependencies and enable draft windows.
+Speculative decoding on MLX is available for MOSS. Install the draft dependencies and enable draft windows.
 
 ```bash
 uv pip install -e '.[drafts]'
