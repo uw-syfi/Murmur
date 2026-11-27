@@ -1,6 +1,7 @@
 """Local model routing and decoding contracts without Metal or model downloads."""
 
 import threading
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -11,6 +12,32 @@ from murmur import Murmur
 from murmur.drafting import whisper_drafts
 from murmur.models.vibevoice import MLXVibeVoiceClient
 from murmur.models.voxtral import MLXVoxtralClient
+
+
+@pytest.mark.parametrize(("language", "size"), [("en", "tiny"), ("zh", "small")])
+def test_mlx_whisper_returns_chunk_relative_word_starts(monkeypatch, language, size):
+    core = SimpleNamespace(gpu=object(), stream=lambda _: nullcontext())
+    monkeypatch.setitem(sys.modules, "mlx", SimpleNamespace(core=core))
+    monkeypatch.setitem(sys.modules, "mlx.core", core)
+    load = Mock()
+    monkeypatch.setitem(sys.modules, "mlx_audio.stt", SimpleNamespace(load=load))
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)
+    converter = Mock(return_value=SimpleNamespace(convert=lambda text: text.replace("語", "语")))
+    monkeypatch.setitem(sys.modules, "opencc", SimpleNamespace(OpenCC=converter))
+    load.return_value.generate.return_value = SimpleNamespace(segments=[
+        {"words": [{"start": 0.4, "word": " Hello,"}, {"start": 1.5, "word": " "}]},
+        {"words": []}, {"words": [{"start": 31.2, "word": " 語"}]},
+    ])
+    whisper = whisper_drafts.MLXWhisperDrafter(language)
+    assert whisper(np.empty(0)) == []
+    load.return_value.generate.assert_not_called()
+    result = whisper(np.zeros(32 * 16000))
+    assert result == [(0.4, "Hello,"), (31.2, "语" if language == "zh" else "語")]
+    load.assert_called_once_with(f"openai/whisper-{size}")
+    call = load.return_value.generate.call_args
+    assert call.args[0].dtype == np.float32
+    assert call.kwargs["language"] == language and call.kwargs["word_timestamps"]
+    assert call.kwargs["temperature"] == 0 and bool(call.kwargs["initial_prompt"]) == (language == "zh")
 
 
 def test_vibevoice_uses_24khz_and_preserves_turns(monkeypatch):
@@ -50,7 +77,7 @@ def test_voxtral_decodes_on_loading_thread_and_attributes_words(monkeypatch, nam
 
     whisper = Mock(return_value=[(0.2, "hello")])
     monkeypatch.setattr(MLXVoxtralClient, "_load", load)
-    monkeypatch.setattr(whisper_drafts, "WhisperDrafter", Mock(return_value=whisper))
+    monkeypatch.setattr(whisper_drafts, "MLXWhisperDrafter", Mock(return_value=whisper))
     with Murmur.load(name, backend="mlx", quantization="int4", language="zh", diarize=False) as pipeline:
         result = pipeline.transcribe(np.zeros(16000, dtype=np.float32), sr=16000, timeline=[(0, 1, "A")])
     assert len(thread_ids) == 2 and thread_ids[0] == thread_ids[1]
@@ -67,7 +94,7 @@ def test_vibevoice_routes_whisper_words_to_local_verifier(monkeypatch):
     model.tokenizer.encode.return_value = [1]
     words = [(0.1, "hello")]
     monkeypatch.setattr(MLXVibeVoiceClient, "_load", Mock(return_value=model))
-    monkeypatch.setattr(whisper_drafts, "WhisperDrafter", Mock(return_value=Mock(return_value=words)))
+    monkeypatch.setattr(whisper_drafts, "MLXWhisperDrafter", Mock(return_value=Mock(return_value=words)))
     stats = dict(proposed=4, accepted=2, verification_calls=3)
     generate = Mock(return_value=('[{"Start":0,"End":0.5,"Speaker":0,"Content":"hello"}]', stats))
     monkeypatch.setattr(vibevoice, "_generate_with_draft", generate)
@@ -84,7 +111,7 @@ def test_vibevoice_batches_chunks_in_order_and_keeps_single_pass_serial(monkeypa
     model.generate.return_value.text = "[]"
     monkeypatch.setattr(MLXVibeVoiceClient, "_load", Mock(return_value=model))
     whisper = Mock(side_effect=[[(0., w)] for w in ("one", "two", "three")])
-    monkeypatch.setattr(whisper_drafts, "WhisperDrafter", Mock(return_value=whisper))
+    monkeypatch.setattr(whisper_drafts, "MLXWhisperDrafter", Mock(return_value=whisper))
     groups = []
 
     def batch(client, jobs, language):

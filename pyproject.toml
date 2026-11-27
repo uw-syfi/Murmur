@@ -37,11 +37,12 @@ dependencies = [
 # Diarization for chunk boundaries and cross-chunk speaker linking.
 diarize = ["pyannote.audio>=4.0"]
 mlx-diarize = ["huggingface-hub", "mlx>=0.32.5"]
-# Draft windows (short-window ASR drafts).
+# Whisper draft windows for the vLLM backend.
 drafts = ["faster-whisper>=1.0", "opencc"]
+mlx-drafts = ["mlx-audio[stt]==0.6.8", "opencc"]
 # Local Apple Silicon runtimes. Voxtral uses Whisper word times for attribution.
 mlx-vibevoice = ["mlx-audio[stt]==0.6.8"]
-mlx-voxtral = ["mlx-voxtral==0.0.6", "mistral-common[audio]", "murmur-asr[drafts]"]
+mlx-voxtral = ["mlx-voxtral==0.0.6", "mistral-common[audio]", "murmur-asr[mlx-drafts]"]
 # Scoring (benchmarks).
 eval = ["jiwer", "meeteval", "pyannote.metrics"]
 all = ["murmur-asr[diarize,drafts,eval]"]
