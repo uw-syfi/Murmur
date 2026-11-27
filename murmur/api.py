@@ -65,7 +65,7 @@ class Murmur:
 
         model          "vibevoice" (VibeVoice-ASR), "moss" (MOSS-Transcribe-Diarize), "voxtral"
                        (Voxtral-Mini-3B) or "voxtral-small" (Voxtral-Small-24B).
-        backend        "vllm" (default) or "mlx" for local MOSS inference on Apple Silicon.
+        backend        "vllm" (default) or "mlx" for local inference on Apple Silicon.
         quantization   MLX weight format; bf16/int4/int8 select published weights when checkpoint is omitted.
         checkpoint     optional MLX model directory or Hub ID overriding automatic checkpoint selection.
         url            an already running server (``murmur serve``); otherwise one is started
@@ -87,8 +87,11 @@ class Murmur:
         client_cls = get_model(model)
         if backend == "mlx":
             from .models.moss import MLXMossClient
-            if client_cls.name != "moss":
-                raise ValueError("The MLX backend supports model='moss'.")
+            from .models.vibevoice import MLXVibeVoiceClient
+
+            local_clients = {"moss": MLXMossClient, "vibevoice": MLXVibeVoiceClient}
+            if client_cls.name not in local_clients:
+                raise ValueError("The MLX backend supports MOSS and VibeVoice.")
             if (any(x is not None for x in (url, vllm_bin, served_name, gpu, server_log, gpu_memory_utilization,
                                             draft_dir)) or single_pass_server):
                 raise ValueError("The MLX backend runs locally and does not accept server options.")
@@ -97,11 +100,14 @@ class Murmur:
             if speculative not in (None, "murmur") or (speculative and draft_windows is False):
                 raise ValueError("MLX supports speculative='murmur' with draft windows enabled.")
             use_drafts = bool(draft_windows or speculative)
+            if use_drafts and client_cls.name != "moss":
+                raise ValueError("MLX speculative decoding is supported only for MOSS.")
+            client = local_clients[client_cls.name](checkpoint, quantization)
+            client.language = language
             drafter = None
             if use_drafts:
                 from .drafting.whisper_drafts import WhisperDrafter
                 drafter = WhisperDrafter(language, device="cpu", compute_type="int8")
-            client = MLXMossClient(checkpoint, quantization)
             return cls(client, chunk_s=chunk_s, batch_size=1, language=language,
                        draft_windows=use_drafts, drafter=drafter,
                        diarizer=Diarizer(hf_token) if diarize else None, keep_failed_output=keep_failed_output)

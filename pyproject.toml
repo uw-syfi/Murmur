@@ -37,6 +37,7 @@ dependencies = [
 diarize = ["pyannote.audio>=4.0"]
 # Draft windows (short-window ASR drafts).
 drafts = ["faster-whisper>=1.0", "opencc"]
+mlx-vibevoice = ["mlx-audio[stt]==0.6.8"]
 # Scoring (benchmarks).
 eval = ["jiwer", "meeteval", "pyannote.metrics"]
 all = ["murmur-asr[diarize,drafts,eval]"]

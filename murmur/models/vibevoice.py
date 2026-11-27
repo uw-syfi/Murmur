@@ -14,6 +14,7 @@ import numpy as np
 import requests
 
 from .base import DiarizingModel, LocalSegment, Reply
+from .mlx import MLXClient
 
 SYSTEM_PROMPT = "You are a helpful assistant that transcribes audio input into text output in JSON format."
 SHOW_KEYS = ["Start time", "End time", "Speaker ID", "Content"]
@@ -170,3 +171,9 @@ class VibeVoiceClient(DiarizingModel):
         if speculative_config:
             args += ["--speculative-config", speculative_config]
         return args, {}
+
+
+class MLXVibeVoiceClient(MLXClient, VibeVoiceClient):
+    def _load(self, checkpoint):
+        from mlx_audio.stt.utils import load_model
+        return load_model(checkpoint, strict=True)
