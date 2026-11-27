@@ -19,10 +19,10 @@ def _serve(a) -> int:
         if a.speculative not in (None, "none") or a.vllm_bin or a.gpu_memory_utilization is not None or a.single_pass:
             raise ValueError("Use greedy llama.cpp serving with GGUF weights")
         cmd = llama_server_command(llama_client(client), port=a.port, batch_size=1 if a.batch_size is None else a.batch_size,
-                                   checkpoint=a.checkpoint, mmproj=a.mmproj, llama_bin=a.llama_bin)
+                                   checkpoint=a.checkpoint, mmproj=a.mmproj, llama_bin=a.llama_bin, cpu_only=a.cpu_only)
         os.execvp(cmd[0], cmd)
-    if any(v is not None for v in (a.checkpoint, a.mmproj, a.llama_bin)):
-        raise ValueError("The serve checkpoint, mmproj and llama-bin flags require --backend llama.cpp")
+    if a.cpu_only or any(v is not None for v in (a.checkpoint, a.mmproj, a.llama_bin)):
+        raise ValueError("The serve checkpoint, mmproj, llama-bin and cpu-only flags require --backend llama.cpp")
     spec = None if a.speculative == "none" else (a.speculative or "murmur")
     if spec == "murmur":
         os.makedirs(a.draft_dir, exist_ok=True)
@@ -37,7 +37,7 @@ def _load_pipeline(a):
     from .api import Murmur
     return Murmur.load(a.model, url=a.url, draft_dir=a.draft_dir, chunk_s=a.chunk_s, batch_size=a.batch_size,
                        backend=a.backend, checkpoint=a.checkpoint, quantization=a.quantization,
-                       mmproj=a.mmproj, llama_bin=a.llama_bin, served_name=a.served_name,
+                       mmproj=a.mmproj, llama_bin=a.llama_bin, served_name=a.served_name, cpu_only=a.cpu_only,
                        language=a.language, gpu=a.gpu, diarize=not a.no_diarize,
                        draft_windows=None if a.draft_windows == "auto" else a.draft_windows == "on")
 
@@ -75,6 +75,8 @@ def _add_pipeline_options(parser):
     parser.add_argument("--quantization", help="select published MLX weights: bf16 (default), int8 or int4")
     parser.add_argument("--checkpoint", help="override the MLX checkpoint with a local directory or Hugging Face ID, "
                                              "or a llama.cpp GGUF file/Hub repo[:quant]")
+    parser.add_argument("--cpu-only", action="store_true", help="use CPU for local llama.cpp and diarization; "
+                        "for an existing server, also start the server in CPU mode")
     parser.add_argument("--mmproj", help="matching audio projector for a local llama.cpp GGUF")
     parser.add_argument("--llama-bin", help="path to llama-server (default: MURMUR_LLAMA_SERVER or PATH)")
     parser.add_argument("--served-name", help="model alias on an existing server")
@@ -98,6 +100,8 @@ def main(argv=None) -> int:
     s.add_argument("model", choices=MODEL_CHOICES)
     s.add_argument("--backend", choices=["vllm", "llama.cpp", "llama-cpp"], default="vllm")
     s.add_argument("--checkpoint", help="GGUF file or Hugging Face GGUF repo[:quant]")
+    s.add_argument("--cpu-only", action="store_true", help="use CPU for local llama.cpp and diarization; "
+                   "for an existing server, also start the server in CPU mode")
     s.add_argument("--mmproj", help="matching audio projector for a local llama.cpp GGUF")
     s.add_argument("--llama-bin", help="path to llama-server (default: MURMUR_LLAMA_SERVER or PATH)")
     s.add_argument("--port", type=int, default=8000)

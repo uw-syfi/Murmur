@@ -153,7 +153,8 @@ class VLLMServer(ManagedServer):
         self._start("vllm", cmd, env, log_path, startup_timeout)
 
 
-def llama_server_command(client, *, port, batch_size=1, checkpoint=None, mmproj=None, llama_bin=None, served_name=None):
+def llama_server_command(client, *, port, batch_size=1, checkpoint=None, mmproj=None, llama_bin=None, served_name=None,
+                        cpu_only=False):
     """Build a stock llama-server command with one audio context per parallel slot."""
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
@@ -165,15 +166,17 @@ def llama_server_command(client, *, port, batch_size=1, checkpoint=None, mmproj=
         weights = ["-m", str(local), "--mmproj", str(Path(mmproj).expanduser())]
     else:
         weights = ["-hf", target]
+    cpu_flags = ["--device", "none", "--gpu-layers", "0", "--no-mmproj-offload",
+                 "--no-kv-offload", "--no-op-offload"] if cpu_only else []
     return [str(llama_bin or os.environ.get("MURMUR_LLAMA_SERVER") or "llama-server"), *weights,
             "--host", "127.0.0.1", "--port", str(port), "--alias", served_name or client.name, "--jinja",
-            "--parallel", str(batch_size), "--ctx-size", str(client.context_per_slot * batch_size)]
+            "--parallel", str(batch_size), "--ctx-size", str(client.context_per_slot * batch_size), *cpu_flags]
 
 
 class LlamaServer(ManagedServer):
-    def __init__(self, client, *, batch_size, checkpoint, mmproj, llama_bin, log_path, served_name=None):
+    def __init__(self, client, *, batch_size, checkpoint, mmproj, llama_bin, log_path, served_name=None, cpu_only=False):
         self.port = free_port()
         self.url = f"http://127.0.0.1:{self.port}"
         cmd = llama_server_command(client, port=self.port, batch_size=batch_size, checkpoint=checkpoint,
-                                   mmproj=mmproj, llama_bin=llama_bin, served_name=served_name)
+                                   mmproj=mmproj, llama_bin=llama_bin, served_name=served_name, cpu_only=cpu_only)
         self._start("llama_cpp", cmd, os.environ.copy(), log_path, 1800.0)

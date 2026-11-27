@@ -83,10 +83,12 @@ def attribute(text: str, ref: list[tuple[float, str]], start: float, end: float,
     tl = [t for t in (timeline or []) if t[1] > start - 5 and t[0] < end + 5]
     segs: list[Segment] = []
     for w, t in zip(words, ts):
+        t = min(end, max(start, t))
+        word_end = min(end, t + WORD_S)
         spk = speaker_at(t, tl)
         if segs and segs[-1].speaker == spk and t - segs[-1].end <= max_gap_s:
             s = segs[-1]
-            segs[-1] = Segment(spk, s.start, max(s.end, t + WORD_S), f"{s.text} {w}")
+            segs[-1] = Segment(spk, s.start, max(s.end, word_end), f"{s.text} {w}")
         else:
-            segs.append(Segment(spk, t, t + WORD_S, w))
+            segs.append(Segment(spk, t, word_end, w))
     return segs
