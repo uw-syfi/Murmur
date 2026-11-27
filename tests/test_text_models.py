@@ -29,6 +29,11 @@ def test_attribute_assigns_the_diarization_speaker_and_groups_words():
     assert speaker_at(3.0, tl) == "A"  # nobody talking: the nearest turn
 
 
+def test_word_attribution_clips_estimated_word_ends_to_the_chunk():
+    segments = attribute("one two", [(4.75, "one"), (5.1, "two")], 3.0, 5.0, None)
+    assert [(s.start, s.end) for s in segments] == [(4.75, 5.0)]
+
+
 def test_text_drafter_follows_the_transcript_and_copies_loops():
     from test_pipeline import CharTok
     tok = CharTok()

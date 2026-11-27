@@ -68,6 +68,26 @@ def test_server_command_handles_gguf_pair_and_slot_context(tmp_path):
     assert cmd[:5] == ["/opt/llama-server", "-m", str(model), "--mmproj", str(projector)]
 
 
+def test_cpu_only_places_every_local_model_on_cpu(monkeypatch):
+    from murmur import api
+
+    launch = Mock(return_value=Mock(url="http://local"))
+    diarizer, whisper = Mock(), Mock()
+    monkeypatch.setattr(server, "LlamaServer", launch)
+    monkeypatch.setattr(api, "Diarizer", diarizer)
+    monkeypatch.setattr(whisper_drafts, "WhisperDrafter", whisper)
+    with Murmur.load("voxtral", backend="llama.cpp", cpu_only=True):
+        assert launch.call_args.kwargs["cpu_only"] is True
+        diarizer.assert_called_once_with(None, device="cpu")
+        whisper.assert_called_once_with("en", device="cpu", compute_type="int8")
+
+    cmd = server.llama_server_command(llama_cpp.LlamaVoxtralClient, port=8080, cpu_only=True)
+    assert cmd[cmd.index("--device") + 1] == "none"
+    assert cmd[cmd.index("--gpu-layers") + 1] == "0"
+    assert {"--no-mmproj-offload", "--no-kv-offload", "--no-op-offload"} <= set(cmd)
+    assert "--device" not in server.llama_server_command(llama_cpp.LlamaVoxtralClient, port=8080)
+
+
 def test_failed_setup_stops_owned_server(monkeypatch):
     owned = Mock(url="http://local")
     monkeypatch.setattr(server, "LlamaServer", Mock(return_value=owned))
@@ -94,30 +114,41 @@ def test_standalone_serve_cli(monkeypatch):
         assert binary == "custom-server"
         assert cmd[cmd.index("--alias") + 1] == "vibevoice"
         assert cmd[cmd.index("--parallel") + 1] == "1"
+        assert "--no-mmproj-offload" in cmd
         assert cmd[cmd.index("-hf") + 1] == "test/model:Q8_0"
         raise SystemExit(0)
 
     monkeypatch.setattr(cli.os, "execvp", execvp)
     with pytest.raises(SystemExit) as exit_info:
         cli.main(["serve", "vibevoice", "--backend", "llama.cpp", "--llama-bin", "custom-server",
-                  "--checkpoint", "test/model:Q8_0"])
+                  "--checkpoint", "test/model:Q8_0", "--cpu-only"])
     assert exit_info.value.code == 0
 
 
 def test_real_meeting_transcription():
-    """Opt in with a running llama-server, its model name and the ES2004a headset mix."""
+    """Exercise an external server or opt in to a fully managed CPU-only run on AMI."""
     import os
 
     url = os.environ.get("MURMUR_TEST_LLAMA_URL")
     wav = os.environ.get("MURMUR_AMI_ES2004A")
-    if not (url and wav):
-        pytest.skip("set MURMUR_TEST_LLAMA_URL and MURMUR_AMI_ES2004A for real GGUF inference")
-    model = os.environ.get("MURMUR_TEST_LLAMA_MODEL", "vibevoice")
+    cpu_model = os.environ.get("MURMUR_TEST_LLAMA_CPU_MODEL")
+    if not ((url or cpu_model) and wav):
+        pytest.skip("set MURMUR_AMI_ES2004A and MURMUR_TEST_LLAMA_URL or MURMUR_TEST_LLAMA_CPU_MODEL")
+    model = cpu_model or os.environ.get("MURMUR_TEST_LLAMA_MODEL", "vibevoice")
+    options = {"url": url, "diarize": False}
+    if cpu_model:
+        options = {"cpu_only": True, "diarize": True, "checkpoint": os.environ.get("MURMUR_TEST_LLAMA_GGUF"),
+                   "mmproj": os.environ.get("MURMUR_TEST_LLAMA_MMPROJ")}
     with sf.SoundFile(wav) as f:
         sr = f.samplerate
         f.seek(84 * sr)
         audio = f.read(28 * sr, dtype="float32")
-    with Murmur.load(model, backend="llama.cpp", url=url, diarize=False) as pipeline:
+    with Murmur.load(model, backend="llama.cpp", **options) as pipeline:
+        if cpu_model:
+            assert str(pipeline.diarizer.pipe.device) == "cpu"
+            if pipeline.drafter is not None:
+                assert pipeline.drafter.pipe.model.model.device == "cpu"
         transcript = pipeline.transcribe(audio, sr=sr)
+    assert all(0 <= s.start <= s.end <= len(audio) / sr for s in transcript.segments)
     assert transcript.stats["chunks_failed"] == 0
     assert {"project", "meeting"} <= set(transcript.text.lower().replace(",", "").split())

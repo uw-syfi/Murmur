@@ -43,3 +43,42 @@ third-party llama-server with a custom model alias, pass `--served-name` to the 
 murmur serve voxtral --backend llama.cpp --port 8080
 murmur transcribe meeting.wav --backend llama.cpp --model voxtral --url http://localhost:8080 --no-diarize
 ```
+
+## CPU-only Linux
+
+Install a CPU build of `llama-server` on `PATH`, or set `MURMUR_LLAMA_SERVER` to its path.
+From a [llama.cpp b12803 source checkout](https://github.com/ggml-org/llama.cpp/tree/b12803),
+build the CPU server with:
+
+```sh
+cmake -S . -B build-cpu -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_VULKAN=OFF -DGGML_METAL=OFF
+cmake --build build-cpu --target llama-server --parallel
+export MURMUR_LLAMA_SERVER="$PWD/build-cpu/bin/llama-server"
+```
+
+In the Murmur checkout, install the CPU wheels in a fresh Python environment. Pyannote also
+requires FFmpeg's shared libraries and Hugging Face access to its gated speaker-diarization-3.1
+pipeline and dependencies.
+
+```sh
+python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+python -m pip install -e '.[diarize,drafts]'
+murmur transcribe meeting.wav --backend llama.cpp --model voxtral --cpu-only --json
+```
+
+| Stage | CPU implementation |
+|---|---|
+| Target ASR and audio encoder | llama.cpp and libmtmd with a GGUF decoder and audio projector |
+| Speaker diarization and chunk boundaries | pyannote 3.1 with CPU PyTorch |
+| Voxtral word timestamps | faster-whisper with CPU INT8 CTranslate2, Whisper-tiny for English and Whisper-small for Mandarin |
+| Speaker attribution and stitching | Murmur running on the host CPU |
+
+Use `cpu_only=True` in `Murmur.load`. For an existing server, run `murmur serve MODEL --backend llama.cpp --cpu-only`
+on the server and use `--cpu-only --url URL` on the client. VibeVoice supplies its own segment timestamps
+and speaker labels and can run with `--no-diarize` without the diarization or Whisper extras.
+Murmur's Whisper-guided speculative draft verification is not implemented in the llama.cpp backend.
+
+To exercise the full managed pipeline on the deployment machine, set `MURMUR_AMI_ES2004A` to the
+ES2004a Mix-Headset WAV, install the test extra and run
+`MURMUR_TEST_LLAMA_CPU_MODEL=voxtral python -m pytest -q tests/test_llama_cpp.py`.
+Set `MURMUR_TEST_LLAMA_GGUF` and `MURMUR_TEST_LLAMA_MMPROJ` to use local weights for this test.

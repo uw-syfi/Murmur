@@ -61,13 +61,14 @@ class Murmur:
              gpu_memory_utilization: float | None = None, keep_failed_output: bool = False,
              backend: str = "vllm", checkpoint: str | Path | None = None,
              quantization: str | None = None, mmproj: str | Path | None = None,
-             llama_bin: str | Path | None = None) -> "Murmur":
+             llama_bin: str | Path | None = None, cpu_only: bool = False) -> "Murmur":
         """Load a model.
 
         model          "vibevoice" (VibeVoice-ASR), "moss" (MOSS-Transcribe-Diarize), "voxtral"
                        (Voxtral-Mini-3B) or "voxtral-small" (Voxtral-Small-24B).
         backend        "vllm" (default), "mlx" for local inference on Apple Silicon, or "llama.cpp" for GGUF
                        audio models.
+        cpu_only       run the llama.cpp target and client-side models on CPU. With url=, configure the server separately.
         mmproj         matching audio projector when checkpoint is a local GGUF file.
         llama_bin      llama-server executable for the managed llama.cpp backend.
         quantization   MLX weight format; bf16/int4/int8 select published weights when checkpoint is omitted.
@@ -109,12 +110,12 @@ class Murmur:
             server = None
             if not url:
                 server = LlamaServer(client_cls, batch_size=batch_size, checkpoint=checkpoint, mmproj=mmproj,
-                                     llama_bin=llama_bin, log_path=server_log, served_name=served_name)
+                                     llama_bin=llama_bin, log_path=server_log, served_name=served_name, cpu_only=cpu_only)
                 url = server.url
             try:
                 client = client_cls(url.rstrip("/").removesuffix("/v1"), served_name=served_name or client_cls.name)
                 client.language = language
-                diarizer = Diarizer(hf_token) if diarize else None
+                diarizer = Diarizer(hf_token, device="cpu" if cpu_only else None) if diarize else None
                 drafter = None
                 if not client_cls.diarizes:
                     from .drafting.whisper_drafts import WhisperDrafter
@@ -125,8 +126,8 @@ class Murmur:
                 if server is not None:
                     server.stop()
                 raise
-        if mmproj is not None or llama_bin is not None:
-            raise ValueError("mmproj and llama_bin are llama.cpp backend options")
+        if mmproj is not None or llama_bin is not None or cpu_only:
+            raise ValueError("mmproj, llama_bin and cpu_only are llama.cpp backend options")
         if backend == "mlx":
             from .models.moss import MLXMossClient
             from .models.vibevoice import MLXVibeVoiceClient
