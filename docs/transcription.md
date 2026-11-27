@@ -1,0 +1,82 @@
+# Transcribe recordings
+
+Activate the environment from the installation guide for your machine. The examples
+use MOSS, which produces timestamped speaker turns on both backends.
+[Apple Silicon installation](install/mlx.md) · [NVIDIA GPU installation](install/vllm.md)
+
+## From the terminal
+
+For Apple Silicon, select `mlx`. For an NVIDIA GPU, change the backend to `vllm`.
+Replace `meeting.wav` with your audio file.
+
+```bash
+murmur transcribe meeting.wav --model moss --backend mlx
+```
+
+For JSON, add `--json`. To save one transcript, redirect standard output to a file.
+
+```bash
+murmur transcribe meeting.wav --model moss --backend mlx --json > meeting.json
+```
+
+You can supply several paths in one invocation to keep the model loaded. With
+`--json`, each recording produces a separate JSON object. Run
+`murmur transcribe --help` for all CLI options.
+
+## From Python
+
+Set `backend` to the runtime you installed. Keep the model context open to reuse it
+for subsequent files. Each call returns a `Transcript`.
+
+```python
+from murmur import Murmur
+
+with Murmur.load("moss", backend="mlx") as model:
+    transcript = model.transcribe("meeting.wav")
+    print(transcript)       # One line per speaker turn
+    print(transcript.text)  # The words in time order
+```
+
+Use `transcript.segments` to iterate over turns, `transcript.speakers` for the
+distinct speaker labels, or `transcript.to_dict()` for the same fields as the CLI JSON.
+
+| JSON field | Meaning |
+|---|---|
+| `duration_s` | Total duration of the input recording in seconds. |
+| `segments` | Speaker turns in time order. Each has a `speaker` label, `start` and `end` in seconds from the start of the recording, and the transcribed `text`. |
+| `stats` | Processing details, including the number of chunks, the number flagged as failed, and time spent in each stage. |
+
+## From another process
+
+Both `murmur transcribe` and `murmur api` take the same pipeline options. Choose the
+model with `--model` and its runtime with `--backend`. After installing the dependencies
+for your runtime, start one of these commands in the client environment:
+
+```bash
+murmur api --model moss --backend vllm
+# On Apple Silicon
+murmur api --model moss --backend mlx
+```
+
+From another process, upload a recording to the same endpoint for either backend:
+
+```bash
+curl --fail -F 'file=@meeting.wav' http://127.0.0.1:8080/transcriptions
+```
+
+Each request waits for the transcript and receives the same JSON as
+`murmur transcribe meeting.wav --json` (`duration_s`, `segments`, and `stats`).
+The local API keeps one pipeline loaded and handles one recording at a time.
+Use `murmur api --help` for startup options, including `--host` and `--port`.
+The lower-level `murmur serve` command starts a standalone vLLM model server.
+
+## Adjust decoding
+
+Murmur targets 330-second chunks by default. Set `--chunk-s` to change that
+target. On vLLM, `--batch-size` controls how many chunks decode concurrently
+(default 8). MLX processes one chunk at a time. Set `--language en` or
+`--language zh` to select the draft language when using draft windows.
+
+Use `--single-pass` (Python: `model.transcribe("meeting.wav", single_pass=True)`)
+to run the baseline. Recordings longer than the model's audio limit are still
+split to fit. [Model limits](../README.md#supported-models)
