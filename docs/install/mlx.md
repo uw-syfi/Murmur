@@ -27,13 +27,13 @@ murmur transcribe meeting.wav --model moss --backend mlx
 
 The default MOSS checkpoint is about 1.8 GB. The first run also downloads the
 diarization models. Murmur prints each speaker turn with its start and end times.
-[Default MOSS checkpoint](https://huggingface.co/vanch007/mlx-MOSS-Transcribe-Diarize)
+[Default MOSS checkpoint (BF16)](https://huggingface.co/efficient-speech/MOSS-Transcribe-Diarize-MLX-BF16)
 
 ## Choose a checkpoint or precision
 
-Use `--quantization int4` or `--quantization int8` to download the existing packed MOSS
-checkpoint directly. Python accepts the same values in `Murmur.load(..., quantization="int4")`.
-Both checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
+Choose `--quantization bf16` (default), `int8` or `int4` to download the corresponding
+MOSS checkpoint from `efficient-speech`. Python accepts the same values in `Murmur.load(..., quantization="int4")`.
+Both packed checkpoints quantize the text backbone and retain the original audio encoder and VQ adaptor.
 
 ```bash
 murmur transcribe meeting.wav --model moss --backend mlx --quantization int4
