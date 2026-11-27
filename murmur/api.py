@@ -110,8 +110,8 @@ class Murmur:
             client.language = language
             drafter = None
             if use_drafts or not client_cls.diarizes:
-                from .drafting.whisper_drafts import WhisperDrafter
-                drafter = WhisperDrafter(language, device="cpu", compute_type="int8")
+                from .drafting.whisper_drafts import MLXWhisperDrafter
+                drafter = MLXWhisperDrafter(language)
             mlx_diarizer = None
             if diarize:
                 from .diarization.mlx import MLXDiarizer
@@ -322,6 +322,7 @@ class Murmur:
     def close(self) -> None:
         """Release the model, stop any managed server, and clean up temporary drafts."""
         self.client.close()
+        self.drafter = None
         if self.server is not None:
             self.server.stop()
             self.server = None

@@ -81,14 +81,14 @@ def test_local_drafts_stay_with_their_chunk(monkeypatch):
     model = Mock()
     model.generate.return_value = SimpleNamespace(text="[0.00][S01]hello[0.50]")
     monkeypatch.setitem(sys.modules, "moss_transcribe_diarize.mlx", SimpleNamespace(load_model=Mock(return_value=model)))
-    monkeypatch.setattr(whisper_drafts, "WhisperDrafter", whisper_loader)
+    monkeypatch.setattr(whisper_drafts, "MLXWhisperDrafter", whisper_loader)
     monkeypatch.setattr(moss, "_generate_with_draft", verify)
     audio = np.zeros(32_000, dtype=np.float32)
     timeline = [(0, 1, "A"), (1, 2, "B")]
     with Murmur.load("moss", backend="mlx", speculative="murmur", diarize=False, chunk_s=1) as pipeline:
         transcript = pipeline.transcribe(audio, sr=16_000, timeline=timeline)
         baseline = pipeline.transcribe(audio, sr=16_000, single_pass=True)
-    whisper_loader.assert_called_once_with("en", device="cpu", compute_type="int8")
+    whisper_loader.assert_called_once_with("en")
     assert whisper.call_count == 2
     assert [c.args[2:] for c in verify.call_args_list] == [
         (words, "en", [list(turn)], turn[0], 512) for turn in timeline

@@ -28,8 +28,9 @@ murmur transcribe meeting.wav --model vibevoice --backend mlx
 murmur transcribe meeting.wav --model voxtral --backend mlx
 ```
 
-Voxtral (`voxtral` is Mini 3B, `voxtral-small` is 24B) generates text and uses CPU Whisper for word
-times, even with draft windows off.
+Voxtral (`voxtral` is Mini 3B, `voxtral-small` is 24B) generates text and uses MLX Whisper for word
+times, even with draft windows off. Whisper runs on the Apple GPU through mlx-audio. On first use it
+downloads `openai/whisper-tiny` for English or `openai/whisper-small` for Mandarin.
 
 The default MOSS checkpoint is about 1.8 GB. The first run also downloads the
 diarization models. Murmur prints each speaker turn with its start and end times.
@@ -80,12 +81,12 @@ checkpoint, which requires about 48 GB for weights plus inference memory.
 Speculative decoding on MLX is available for MOSS and VibeVoice. Install the draft dependencies and enable draft windows.
 
 ```bash
-uv pip install -e '.[drafts]'
+uv pip install -e '.[mlx-drafts]'
 murmur transcribe meeting.wav --model moss --backend mlx --draft-windows on --json
 ```
 
 In Python, use `Murmur.load("moss", backend="mlx", draft_windows=True)`.
-Whisper runs on the CPU and supplies timestamped words to the selected model’s proposer. The MLX model
+MLX Whisper supplies timestamped words to the selected model’s proposer. The MLX model
 checks up to eight proposed tokens per pass. JSON output includes proposed and accepted token counts
 and the number of verification passes in `stats.speculative`. Both MLX models default to greedy decoding.
 
