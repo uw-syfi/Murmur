@@ -141,4 +141,5 @@ Mandarin) with jiwer, cpWER and tcpWER (5 s collar) with MeetEval, DER with pyan
 
 Pull requests run CPU tests on Python 3.10 and 3.12 and check that the built wheel installs in a
 clean environment. Hardware jobs run inference nightly on Apple Silicon and CUDA. See
-[docs/ci.md](docs/ci.md) for the workflows and runner setup.
+[docs/ci.md](docs/ci.md) for the workflows and runner setup, and run the same suites locally with
+`scripts/test.sh`.
