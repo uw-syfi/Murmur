@@ -192,8 +192,29 @@ class MLXVibeVoiceClient(MLXClient, VibeVoiceClient):
             text, stats = _generate_with_draft(self.model, audio, proposer, self.budget(audio))
             return Reply(text, perf_counter() - start, speculative=stats)
 
+    def decode_draft_batch(self, jobs, language):
+        from ..drafting.vllm_proposer import VibeVoiceDrafter
+        from .mlx import GreedySequence
+        from .vibevoice_batch import verify_batch
 
-def _generate_with_draft(model, audio, proposer, budget):
+        with self._lock:
+            if self.model is None or self.model.is_streaming_model:
+                raise ValueError("Batched verification requires an open offline VibeVoice model.")
+            sequences, caches, starts = [], [], []
+            eos = _stop_tokens(self.model)
+            for audio, words in jobs:
+                starts.append(perf_counter())
+                first, cache = _prefill(self.model, audio)
+                proposer = VibeVoiceDrafter.from_words(words, self.model.tokenizer, language)
+                sequences.append(GreedySequence(first, proposer, eos, self.budget(audio)))
+                caches.append(cache)
+            finished = verify_batch(self.model.language_model, sequences, caches)
+            return [Reply(self.model.tokenizer.decode(seq.tokens, skip_special_tokens=True).strip(),
+                          end - start, speculative=seq.stats)
+                    for seq, start, end in zip(sequences, starts, finished)]
+
+
+def _prefill(model, audio):
     import mlx.core as mx
     from mlx_audio.lm.models.cache import make_prompt_cache
 
@@ -212,6 +233,19 @@ def _generate_with_draft(model, audio, proposer, budget):
     logits = lm(ids[:, -1:], cache=cache, input_embeddings=embeddings[:, -1:])
     first = mx.argmax(logits[0, -1]).item()
 
+    return first, cache
+
+
+def _stop_tokens(model):
+    return {151643, 151645, model.tokenizer.eos_token_id}  # endoftext and im_end
+
+
+def _generate_with_draft(model, audio, proposer, budget):
+    import mlx.core as mx
+
+    first, cache = _prefill(model, audio)
+    lm = model.language_model
+
     def verify(block):
         return mx.argmax(lm(mx.array([block]), cache=cache)[0], axis=-1).tolist()
 
@@ -220,7 +254,7 @@ def _generate_with_draft(model, audio, proposer, budget):
             if layer.trim(count) != count:
                 raise RuntimeError("VibeVoice could not rewind the speculative token cache.")
 
-    eos = {151643, 151645, model.tokenizer.eos_token_id}  # endoftext and im_end, as in mlx-audio
+    eos = _stop_tokens(model)
     tokens, stats = verify_greedy(first, proposer, verify, rewind, eos, budget)
     mx.clear_cache()
     return model.tokenizer.decode(tokens, skip_special_tokens=True).strip(), stats

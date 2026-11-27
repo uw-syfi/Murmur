@@ -46,28 +46,46 @@ class MLXClient(ModelClient):
             self.model = None
 
 
-def verify_greedy(first, proposer, verify, rewind, eos, budget):
-    """Keep the last emitted token pending. The cache holds everything before it."""
-    tokens = []
-    stats = {"proposed": 0, "accepted": 0, "verification_calls": 0}
-    if budget <= 0 or first in eos:
-        return tokens, stats
-    tokens.append(first)
-    while len(tokens) < budget:
-        # Leave room for the target's correction (or a bonus after a full match).
-        k = min(8, budget - len(tokens) - 1)
-        draft = proposer.propose(tokens, k)[:k] if k else []
-        predictions = verify([tokens[-1], *draft])
+class GreedySequence:
+    """Independent proposal, output budget and acceptance counters for one sequence."""
+
+    def __init__(self, first, proposer, eos, budget):
+        self.proposer = proposer
+        self.eos = eos
+        self.budget = budget
+        self.tokens = [first] if budget > 0 and first not in eos else []
+        self.done = not self.tokens or len(self.tokens) >= budget
+        self.stats = {"proposed": 0, "accepted": 0, "verification_calls": 0}
+
+    def block(self):
+        # Leave room for a correction, or the bonus token after a full match.
+        k = min(8, self.budget - len(self.tokens) - 1)
+        draft = self.proposer.propose(self.tokens, k)[:k] if k else []
+        return [self.tokens[-1], *draft]
+
+    def accept(self, block, predictions):
+        draft = block[1:]
         matched = 0
         while matched < len(draft) and predictions[matched] == draft[matched]:
             matched += 1
-        stats["verification_calls"] += 1
-        stats["proposed"] += len(draft)
-        stats["accepted"] += matched
-        if matched < len(draft):
-            rewind(len(draft) - matched)
+        self.stats["verification_calls"] += 1
+        self.stats["proposed"] += len(draft)
+        self.stats["accepted"] += matched
         for token in predictions[:matched + 1]:
-            if token in eos:
-                return tokens, stats
-            tokens.append(token)
-    return tokens, stats
+            if token in self.eos:
+                self.done = True
+                break
+            self.tokens.append(token)
+        self.done = self.done or len(self.tokens) >= self.budget
+        return len(draft) - matched
+
+
+def verify_greedy(first, proposer, verify, rewind, eos, budget):
+    """Keep the last emitted token pending. The cache holds everything before it."""
+    seq = GreedySequence(first, proposer, eos, budget)
+    while not seq.done:
+        block = seq.block()
+        rejected = seq.accept(block, verify(block))
+        if rejected:
+            rewind(rejected)
+    return seq.tokens, seq.stats
