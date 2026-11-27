@@ -46,6 +46,30 @@ distinct speaker labels, or `transcript.to_dict()` for the same fields as the CL
 | `segments` | Speaker turns in time order. Each has a `speaker` label, `start` and `end` in seconds from the start of the recording, and the transcribed `text`. |
 | `stats` | Processing details, including the number of chunks, the number flagged as failed, and time spent in each stage. |
 
+## From another process
+
+Both `murmur transcribe` and `murmur api` take the same pipeline options. Choose the
+model with `--model` and its runtime with `--backend`. After installing the dependencies
+for your runtime, start one of these commands in the client environment:
+
+```bash
+murmur api --model moss --backend vllm
+# On Apple Silicon
+murmur api --model moss --backend mlx
+```
+
+From another process, upload a recording to the same endpoint for either backend:
+
+```bash
+curl --fail -F 'file=@meeting.wav' http://127.0.0.1:8080/transcriptions
+```
+
+Each request waits for the transcript and receives the same JSON as
+`murmur transcribe meeting.wav --json` (`duration_s`, `segments`, and `stats`).
+The local API keeps one pipeline loaded and handles one recording at a time.
+Use `murmur api --help` for startup options, including `--host` and `--port`.
+The lower-level `murmur serve` command starts a standalone vLLM model server.
+
 ## Adjust decoding
 
 Murmur targets 330-second chunks by default. Set `--chunk-s` to change that

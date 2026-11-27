@@ -30,7 +30,7 @@ MOSS prints timestamped speaker turns. Example output for a short recording:
 [   3.45-   5.10] SPEAKER_01: Yes, I have the numbers here.
 ```
 
-For Python examples and JSON output, see the [transcription guide](docs/transcription.md).
+For Python examples, JSON output and the local HTTP API (`murmur api`), see the [transcription guide](docs/transcription.md).
 
 ## How Murmur works
 
