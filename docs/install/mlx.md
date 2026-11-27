@@ -71,11 +71,6 @@ Available presets are affine integers (`int1`, `int2`, `int3`, `int4`, `int5`, `
 `int8`, group size 64), `mxfp4` and `mxfp8` (group size 32), and `nvfp4` (group size 16).
 The 1–3 bit affine presets produced unusable transcripts in a short English smoke test on an M4 Max.
 
-To run the 12-checkpoint integration test, install all three runtimes and the `test` extra,
-set `MURMUR_AMI_ES2004A` to the path of AMI’s `ES2004a.Mix-Headset.wav`, and run
-`python -m pytest tests/test_mlx_checkpoints.py`. The test includes the 24B BF16
-checkpoint, which requires about 48 GB for weights plus inference memory.
-
 ## Enable speculative decoding
 
 Speculative decoding on MLX is available for MOSS and VibeVoice. Install the draft dependencies and enable draft windows.
