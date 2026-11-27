@@ -60,14 +60,19 @@ class Murmur:
              server_log: str | Path | None = None, single_pass_server: bool = False,
              gpu_memory_utilization: float | None = None, keep_failed_output: bool = False,
              backend: str = "vllm", checkpoint: str | Path | None = None,
-             quantization: str | None = None) -> "Murmur":
+             quantization: str | None = None, mmproj: str | Path | None = None,
+             llama_bin: str | Path | None = None) -> "Murmur":
         """Load a model.
 
         model          "vibevoice" (VibeVoice-ASR), "moss" (MOSS-Transcribe-Diarize), "voxtral"
                        (Voxtral-Mini-3B) or "voxtral-small" (Voxtral-Small-24B).
-        backend        "vllm" (default) or "mlx" for local inference on Apple Silicon.
+        backend        "vllm" (default), "mlx" for local inference on Apple Silicon, or "llama.cpp" for GGUF
+                       audio models.
+        mmproj         matching audio projector when checkpoint is a local GGUF file.
+        llama_bin      llama-server executable for the managed llama.cpp backend.
         quantization   MLX weight format; bf16/int4/int8 select published weights when checkpoint is omitted.
-        checkpoint     optional MLX model directory or Hub ID overriding automatic checkpoint selection.
+        checkpoint     MLX model directory/Hub ID overriding automatic checkpoint selection, or a llama.cpp
+                       GGUF file/Hub repo[:quant].
         url            an already running server (``murmur serve``); otherwise one is started
                        with the ``vllm`` of this model's environment (see :mod:`murmur.server`).
         draft_windows  speculative decoding from 30 s draft windows; default on for VibeVoice-ASR
@@ -87,6 +92,41 @@ class Murmur:
                        room for pyannote and the draft model on the same GPU).
         """
         client_cls = get_model(model)
+        if backend in ("llama.cpp", "llama-cpp"):
+            from .models.llama_cpp import llama_client
+            from .server import LlamaServer
+
+            client_cls = llama_client(client_cls)
+            if draft_windows or speculative or draft_dir:
+                raise ValueError("The llama.cpp backend uses greedy decoding; disable speculative draft windows")
+            if any(v is not None for v in (gpu, gpu_memory_utilization, quantization, vllm_bin)) or single_pass_server:
+                raise ValueError("Use a GGUF checkpoint to select llama.cpp weights and llama-server for device settings")
+            if url and any(v is not None for v in (checkpoint, mmproj, llama_bin, server_log)):
+                raise ValueError("With url=, configure the checkpoint and llama.cpp server options on that server")
+            batch_size = 1 if batch_size is None else batch_size
+            if batch_size < 1:
+                raise ValueError("batch_size must be positive")
+            server = None
+            if not url:
+                server = LlamaServer(client_cls, batch_size=batch_size, checkpoint=checkpoint, mmproj=mmproj,
+                                     llama_bin=llama_bin, log_path=server_log, served_name=served_name)
+                url = server.url
+            try:
+                client = client_cls(url.rstrip("/").removesuffix("/v1"), served_name=served_name or client_cls.name)
+                client.language = language
+                diarizer = Diarizer(hf_token) if diarize else None
+                drafter = None
+                if not client_cls.diarizes:
+                    from .drafting.whisper_drafts import WhisperDrafter
+                    drafter = WhisperDrafter(language, device="cpu", compute_type="int8")
+                return cls(client, server=server, language=language, chunk_s=chunk_s, batch_size=batch_size,
+                           diarizer=diarizer, drafter=drafter, keep_failed_output=keep_failed_output)
+            except BaseException:
+                if server is not None:
+                    server.stop()
+                raise
+        if mmproj is not None or llama_bin is not None:
+            raise ValueError("mmproj and llama_bin are llama.cpp backend options")
         if backend == "mlx":
             from .models.moss import MLXMossClient
             from .models.vibevoice import MLXVibeVoiceClient
@@ -120,7 +160,7 @@ class Murmur:
                        draft_windows=use_drafts, drafter=drafter,
                        diarizer=mlx_diarizer, keep_failed_output=keep_failed_output)
         if backend != "vllm":
-            raise ValueError(f"Unknown backend {backend!r}; choose 'vllm' or 'mlx'.")
+            raise ValueError(f"Unknown backend {backend!r}; choose 'vllm', 'mlx' or 'llama.cpp'.")
         if quantization is not None:
             raise ValueError("quantization is an MLX backend option.")
         if checkpoint is not None:

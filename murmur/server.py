@@ -82,7 +82,59 @@ def server_command(client: type[ModelClient], *, port: int, batch_size: int = 8,
     return cmd, env
 
 
-class VLLMServer:
+class ManagedServer:
+    """Own a local HTTP model server for the lifetime of a Murmur pipeline."""
+
+    def _start(self, name, cmd, env, log_path, startup_timeout):
+        self.log_path = Path(log_path) if log_path else Path(tempfile.gettempdir()) / f"murmur_{name}_{self.port}.log"
+        log.info("starting %s (log %s): %s", name, self.log_path, " ".join(cmd))
+        self._log = open(self.log_path, "w")
+        try:
+            self.proc = subprocess.Popen(cmd, env=env, stdout=self._log, stderr=subprocess.STDOUT,
+                                         start_new_session=True)
+        except BaseException:
+            self._log.close()
+            raise
+        try:
+            self._wait(startup_timeout)
+        except BaseException:
+            self.stop()
+            raise
+
+    def _wait(self, timeout: float) -> None:
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            if self.proc.poll() is not None:
+                raise RuntimeError(f"Model server exited during startup; see {self.log_path}")
+            try:
+                if requests.get(f"{self.url}/health", timeout=5).ok:
+                    log.info("Model server up on %s after %.0f s", self.url, time.time() - t0)
+                    return
+            except requests.RequestException:
+                pass
+            time.sleep(5)
+        raise TimeoutError(f"Model server not ready after {timeout:.0f} s; see {self.log_path}")
+
+    def stop(self) -> None:
+        if self.proc.poll() is None:
+            try:
+                if os.name == "posix":
+                    os.killpg(self.proc.pid, signal.SIGTERM)
+                else:
+                    self.proc.terminate()
+                self.proc.wait(timeout=60)
+            except ProcessLookupError:
+                pass
+            except subprocess.TimeoutExpired:
+                if os.name == "posix":
+                    os.killpg(self.proc.pid, signal.SIGKILL)
+                else:
+                    self.proc.kill()
+                self.proc.wait()
+        self._log.close()
+
+
+class VLLMServer(ManagedServer):
     """A vLLM server process owned by this Python process (stopped on ``stop()`` / exit)."""
 
     def __init__(self, client: type[ModelClient], *, port: int | None = None, gpu: int | str | None = None,
@@ -98,33 +150,30 @@ class VLLMServer:
         env.pop("PYTHONNOUSERSITE", None)  # the server keeps its own environment's site settings
         if gpu is not None:
             env["CUDA_VISIBLE_DEVICES"] = str(gpu)
-        self.log_path = Path(log_path) if log_path else Path(tempfile.gettempdir()) / f"murmur_vllm_{self.port}.log"
-        log.info("starting vLLM (%s, log %s): %s", client.name, self.log_path, " ".join(cmd))
-        self._log = open(self.log_path, "w")
-        self.proc = subprocess.Popen(cmd, env=env, stdout=self._log, stderr=subprocess.STDOUT,
-                                     start_new_session=True)
-        self._wait(startup_timeout)
+        self._start("vllm", cmd, env, log_path, startup_timeout)
 
-    def _wait(self, timeout: float) -> None:
-        t0 = time.time()
-        while time.time() - t0 < timeout:
-            if self.proc.poll() is not None:
-                raise RuntimeError(f"vLLM server exited during startup; see {self.log_path}")
-            try:
-                if requests.get(f"{self.url}/health", timeout=5).ok:
-                    log.info("vLLM up on %s after %.0f s", self.url, time.time() - t0)
-                    return
-            except requests.RequestException:
-                pass
-            time.sleep(5)
-        self.stop()
-        raise TimeoutError(f"vLLM server not ready after {timeout:.0f} s; see {self.log_path}")
 
-    def stop(self) -> None:
-        if self.proc.poll() is None:
-            try:
-                os.killpg(self.proc.pid, signal.SIGTERM)
-                self.proc.wait(timeout=60)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
-                os.killpg(self.proc.pid, signal.SIGKILL)
-        self._log.close()
+def llama_server_command(client, *, port, batch_size=1, checkpoint=None, mmproj=None, llama_bin=None, served_name=None):
+    """Build a stock llama-server command with one audio context per parallel slot."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    target = str(checkpoint or client.gguf_repo)
+    local = Path(target).expanduser()
+    if mmproj is not None or local.exists() or local.is_absolute() or local.suffix.lower() == ".gguf":
+        if not local.is_file() or mmproj is None or not Path(mmproj).expanduser().is_file():
+            raise ValueError("A local llama.cpp checkpoint requires a GGUF file and its matching mmproj file")
+        weights = ["-m", str(local), "--mmproj", str(Path(mmproj).expanduser())]
+    else:
+        weights = ["-hf", target]
+    return [str(llama_bin or os.environ.get("MURMUR_LLAMA_SERVER") or "llama-server"), *weights,
+            "--host", "127.0.0.1", "--port", str(port), "--alias", served_name or client.name, "--jinja",
+            "--parallel", str(batch_size), "--ctx-size", str(client.context_per_slot * batch_size)]
+
+
+class LlamaServer(ManagedServer):
+    def __init__(self, client, *, batch_size, checkpoint, mmproj, llama_bin, log_path, served_name=None):
+        self.port = free_port()
+        self.url = f"http://127.0.0.1:{self.port}"
+        cmd = llama_server_command(client, port=self.port, batch_size=batch_size, checkpoint=checkpoint,
+                                   mmproj=mmproj, llama_bin=llama_bin, served_name=served_name)
+        self._start("llama_cpp", cmd, os.environ.copy(), log_path, 1800.0)
