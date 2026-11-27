@@ -36,6 +36,7 @@ dependencies = [
 [project.optional-dependencies]
 # Diarization for chunk boundaries and cross-chunk speaker linking.
 diarize = ["pyannote.audio>=4.0"]
+mlx-diarize = ["huggingface-hub", "mlx>=0.32.5"]
 # Draft windows (short-window ASR drafts).
 drafts = ["faster-whisper>=1.0", "opencc"]
 # Local Apple Silicon runtimes. Voxtral uses Whisper word times for attribution.

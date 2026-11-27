@@ -70,21 +70,36 @@ class Diarizer:
         if not tok:
             raise RuntimeError("pyannote needs a Hugging Face token: set HF_TOKEN or run `huggingface-cli login`, "
                                "and accept the terms of pyannote/speaker-diarization-3.1.")
-        dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        self.pipe = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=tok).to(dev)
+        if device is None:
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+        self.device = torch.device(device)
+        self.pipe = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=tok).to(self.device)
         self._lock = threading.Lock()
 
-    def __call__(self, wav16: torch.Tensor, min_speakers: int | None = None) -> Timeline:
+    def __call__(self, wav16: torch.Tensor, min_speakers: int | None = None, *,
+                 num_speakers: int | None = None, hook=None) -> Timeline:
         kw = {"min_speakers": min_speakers} if min_speakers else {}
+        if num_speakers is not None:
+            kw["num_speakers"] = num_speakers
+        if hook is not None:
+            kw["hook"] = hook
         with self._lock:
-            # cuDNN autotuning: without it the embedding model is ~4x slower on recent torch/cuDNN
-            prev, torch.backends.cudnn.benchmark = torch.backends.cudnn.benchmark, True
-            try:
-                raw = self.pipe({"waveform": wav16.unsqueeze(0), "sample_rate": SR}, **kw)
-            finally:
-                torch.backends.cudnn.benchmark = prev
-            if torch.cuda.is_available():
+            audio = {"waveform": wav16.unsqueeze(0), "sample_rate": SR}
+            if self.device.type == "cuda":
+                # cuDNN autotuning accelerates the embedding model on CUDA.
+                prev, torch.backends.cudnn.benchmark = torch.backends.cudnn.benchmark, True
+                try:
+                    raw = self.pipe(audio, **kw)
+                finally:
+                    torch.backends.cudnn.benchmark = prev
                 torch.cuda.empty_cache()  # the vLLM server shares this GPU
+            else:
+                raw = self.pipe(audio, **kw)
         ann = raw if hasattr(raw, "itertracks") else (getattr(raw, "speaker_diarization", None)
                                                       or getattr(raw, "diarization", None)
                                                       or next(iter(vars(raw).values())))

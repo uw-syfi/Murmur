@@ -10,16 +10,13 @@ cd Murmur
 uv venv --python 3.12
 source .venv/bin/activate
 # VibeVoice and both Voxtral sizes
-uv pip install -e '.[diarize,mlx-vibevoice,mlx-voxtral]'
+uv pip install -e '.[mlx-diarize,mlx-vibevoice,mlx-voxtral]'
 # MOSS
-uv pip install -e '.[diarize]' 'moss-transcribe-diarize[mlx-runtime] @ git+https://github.com/vanch007/mlx-MOSS-Transcribe-Diarize.git@d2546316f76e93947e8d99a17fb88652f8ad6ab2'
+uv pip install -e '.[mlx-diarize]' 'moss-transcribe-diarize[mlx-runtime] @ git+https://github.com/vanch007/mlx-MOSS-Transcribe-Diarize.git@d2546316f76e93947e8d99a17fb88652f8ad6ab2'
 ```
 
-Accept the model terms for [speaker diarization](https://huggingface.co/pyannote/speaker-diarization-3.1)
-and [segmentation](https://huggingface.co/pyannote/segmentation-3.0), then set `HF_TOKEN`
-in your shell to a Hugging Face read token with access to both models.
-With pyannote.audio 4.1.1, also accept the [Community-1 terms](https://huggingface.co/pyannote/speaker-diarization-community-1)
-for the files that version downloads during setup.
+The `mlx-diarize` extra runs speaker diarization on the Apple GPU with public weights, so no
+Hugging Face token is needed. See [Diarize on the Apple GPU](#diarize-on-the-apple-gpu).
 
 ## Transcribe a file
 
@@ -37,6 +34,20 @@ times, even with draft windows off.
 The default MOSS checkpoint is about 1.8 GB. The first run also downloads the
 diarization models. Murmur prints each speaker turn with its start and end times.
 [Default MOSS checkpoint (BF16)](https://huggingface.co/efficient-speech/MOSS-Transcribe-Diarize-MLX-BF16)
+
+## Diarize on the Apple GPU
+
+The MLX backend runs pyannote segmentation, WeSpeaker embeddings, clustering, and turn
+reconstruction on the Apple GPU to link speakers across chunks. It downloads 32.5 MB of FP32
+weights once and reuses the Hugging Face cache. [Public MLX checkpoints](https://huggingface.co/efficient-speech/Pyannote-Diarization-3.1-MLX-FP32)
+Pass `--no-diarize` to skip it; MOSS and VibeVoice then label speakers within each chunk.
+
+On an M4 Max, MLX diarized the 17.5-minute AMI ES2004a meeting in 18.74 s on the headset mix
+and 17.79 s on the distant mic. PyTorch MPS took 46.94 s and 46.93 s, respectively, with matching
+speaker turns. [Benchmark and scoring details](../benchmarks/pyannote-mac.md)
+
+A separate benchmark runs Reverb INT8 segmentation and TitaNet Small embeddings on the Apple GPU.
+Feature extraction and clustering run on the CPU. [Experimental setup and accuracy](../benchmarks/reverb-mlx.md)
 
 ## Choose a checkpoint or precision
 
