@@ -89,7 +89,7 @@ model) and speakers (from pyannote).
 
 A single pass over a model's max audio length is split into the fewest pieces that fit.
 
-### Supporting models
+### Drafting and diarization models
 
 | Component | Supported model |
 |---|---|
@@ -99,14 +99,8 @@ A single pass over a model's max audio length is split into the fewest pieces th
 | Speaker segmentation | [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) |
 | Speaker embeddings | [pyannote/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM) |
 
-### Experimental diarization models
-
-These two models run together in a standalone Mac prototype. The Murmur CLI and Python API use the pyannote pipeline listed above.
-
-| Component | Prototype model |
-|---|---|
-| Speaker segmentation | Reverb Diarization V1 (INT8) |
-| Speaker embeddings | NeMo TitaNet Small |
+A standalone Mac prototype also tests Reverb Diarization V1 (INT8) segmentation with NeMo TitaNet Small
+embeddings; the CLI and Python API use pyannote. [Prototype benchmark](docs/benchmarks/reverb-mlx.md)
 
 ## Benchmarks
 
@@ -142,3 +136,9 @@ Mandarin) with jiwer, cpWER and tcpWER (5 s collar) with MeetEval, DER with pyan
   url={https://arxiv.org/abs/2606.01483}
 }
 ```
+
+## Continuous integration
+
+Pull requests run CPU tests on Python 3.10 and 3.12 and check that the built wheel installs in a
+clean environment. Hardware jobs run inference nightly on Apple Silicon and CUDA. See
+[docs/ci.md](docs/ci.md) for the workflows and runner setup.
