@@ -37,6 +37,7 @@ dependencies = [
 # Diarization for chunk boundaries and cross-chunk speaker linking.
 diarize = ["pyannote.audio>=4.0"]
 mlx-diarize = ["huggingface-hub", "mlx>=0.32.5"]
+mlx-nemotron = ["mlx-audio==0.6.8"]
 # Whisper draft windows for the vLLM backend.
 drafts = ["faster-whisper>=1.0", "opencc"]
 mlx-drafts = ["mlx-audio[stt]==0.6.8", "opencc"]

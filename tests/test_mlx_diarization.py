@@ -97,3 +97,27 @@ def test_full_diarizer_against_mps_on_meeting_excerpt():
     np.testing.assert_allclose([t[:2] for t in actual], [t[:2] for t in expected], rtol=0, atol=1e-6)
     pairs = {(a[2], b[2]) for a, b in zip(actual, expected)}
     assert len(pairs) == len({a for a, _ in pairs}) == len({b for _, b in pairs})
+
+
+def test_nemotron_timeline_keeps_overlap_and_merges_per_speaker(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from murmur.diarization.nemotron_mlx import MLXNemotronDiarizer
+
+    model = Mock()
+    model.generate.return_value.segments = [
+        SimpleNamespace(start=0.0, end=0.2, speaker=7),
+        SimpleNamespace(start=0.1, end=0.4, speaker=0),
+        SimpleNamespace(start=0.3, end=0.9, speaker=7),
+    ]
+    load = Mock(return_value=model)
+    monkeypatch.setitem(sys.modules, "mlx_audio.vad", SimpleNamespace(load=load))
+    diarizer = MLXNemotronDiarizer()
+    load.assert_called_once_with(diarizer.MODEL, revision=diarizer.REVISION, strict=True)
+    assert diarizer(np.empty(0, dtype=np.float32)) == []
+    model.generate.assert_not_called()
+    wav = np.zeros(16_000, dtype=np.float32)
+    assert diarizer(wav) == [(0, 0.9, "SPEAKER_07"), (0.1, 0.4, "SPEAKER_00")]
+    model.generate.assert_called_once_with(wav, sample_rate=16_000)

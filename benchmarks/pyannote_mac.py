@@ -1,7 +1,7 @@
-"""Time Murmur's pyannote diarizer on in-memory audio and score it against RTTM.
+"""Time Murmur's diarizers on in-memory audio and score it against RTTM.
 
 Example: python benchmarks/pyannote_mac.py meeting.wav meeting.rttm --device mps --speakers 4 --output run.json
-Install eval and the backend extra (diarize for PyTorch or mlx-diarize for MLX).
+Install eval and the model extra (diarize, mlx-diarize, or mlx-nemotron).
 """
 
 import argparse
@@ -30,6 +30,7 @@ def main():
     parser.add_argument("audio", type=Path)
     parser.add_argument("rttm", type=Path)
     parser.add_argument("--device", choices=("cpu", "mps", "mlx"), help="Default to automatic PyTorch device selection")
+    parser.add_argument("--diarizer", choices=("pyannote", "nemotron"), default="pyannote")
     parser.add_argument("--speakers", type=int, help="Known speaker count, if available")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--runs", type=int, default=1)
@@ -38,6 +39,9 @@ def main():
     if args.runs < 1 or args.threads < 1 or (args.speakers is not None and args.speakers < 1):
         parser.error("runs, threads and speaker count must be positive")
 
+    if args.diarizer == "nemotron" and (args.device != "mlx" or args.speakers is not None):
+        parser.error("Nemotron requires --device mlx and infers the speaker count")
+
     torch.set_num_threads(args.threads)
     waveform = load_audio(args.audio)
     reference = annotation(parse_rttm(args.rttm))
@@ -45,11 +49,16 @@ def main():
         parser.error("expected a nonempty RTTM reference")
     if args.device == "mlx":
         import mlx.core as mx
-        from murmur.diarization.mlx import MLXDiarizer
-        diarizer = MLXDiarizer()
         device = "mlx"
+        if args.diarizer == "nemotron":
+            from murmur.diarization.nemotron_mlx import MLXNemotronDiarizer
+            diarizer = MLXNemotronDiarizer()
+            placements = {"sortformer": "mlx:gpu"}
+        else:
+            from murmur.diarization.mlx import MLXDiarizer
+            diarizer = MLXDiarizer()
+            placements = dict.fromkeys(("segmentation", "embedding", "clustering"), "mlx:gpu")
         pipe = diarizer
-        placements = dict.fromkeys(("segmentation", "embedding", "clustering"), "mlx:gpu")
     else:
         diarizer = Diarizer(device=args.device)
         device = diarizer.device.type
@@ -57,12 +66,16 @@ def main():
         placements = {"segmentation": str(next(pipe._segmentation.model.parameters()).device),
                       "embedding": str(next(pipe._embedding.model_.parameters()).device)}
     print(f"Running {args.audio.name} on {device} with {placements}", flush=True)
-    diarizer(waveform[:20 * SR], num_speakers=args.speakers)
+    options = {"num_speakers": args.speakers} if args.diarizer == "pyannote" else {}
+    diarizer(waveform[:20 * SR], **options)
     result = dict(audio=str(args.audio), reference=str(args.rttm), device=device, placements=placements,
-                  model="pyannote/speaker-diarization-3.1",
+                  model=diarizer.MODEL if args.diarizer == "nemotron" else "pyannote/speaker-diarization-3.1",
                   torch=torch.__version__, threads=args.threads, speakers=args.speakers,
-                  duration_s=len(waveform) / SR, segmentation_batch=pipe.segmentation_batch_size,
-                  embedding_batch=pipe.embedding_batch_size, runs=[])
+                  duration_s=len(waveform) / SR, runs=[])
+    if args.diarizer == "pyannote":
+        result.update(segmentation_batch=pipe.segmentation_batch_size, embedding_batch=pipe.embedding_batch_size)
+    else:
+        result.update(revision=diarizer.REVISION, mlx_audio=version("mlx-audio"))
 
     if device == "mlx":
         result["mlx"] = version("mlx")
@@ -91,9 +104,11 @@ def main():
                 synchronize()
                 stages[step_name] = perf_counter() - starts.pop(step_name)
 
+        if args.diarizer == "pyannote":
+            options["hook"] = hook
         synchronize()
         start = perf_counter()
-        timeline = diarizer(waveform, num_speakers=args.speakers, hook=hook)
+        timeline = diarizer(waveform, **options)
         synchronize()
         total_s = perf_counter() - start
         metric = DiarizationErrorRate(collar=0.25, skip_overlap=False)

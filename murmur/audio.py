@@ -129,7 +129,7 @@ def merge_same_speaker(tl: Timeline, gap_s: float) -> Timeline:
 
 
 class NemotronDiarizer:
-    """NVIDIA Nemotron-3-Diarization (100M Sortformer, up to 4 speakers), a faster alternative to pyannote.
+    """NVIDIA Nemotron-3-Diarization (100M Sortformer, up to 8 speakers), a faster alternative to pyannote.
 
     Needs NeMo 3.1 or newer, which is not on PyPI yet (3.0.0 cannot load the model)::
 

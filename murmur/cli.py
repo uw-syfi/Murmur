@@ -93,7 +93,7 @@ def _add_pipeline_options(parser):
     parser.add_argument("--gpu", default=None)
     parser.add_argument("--no-diarize", action="store_true")
     parser.add_argument("--diarizer", choices=["pyannote", "nemotron"], default="pyannote",
-                        help="nemotron: Nemotron-3-Diarization, faster (vLLM backend, needs NeMo 3.1+)")
+                        help="nemotron: Nemotron-3-Diarization, on MLX (mlx-audio) or vLLM (NeMo 3.1+)")
     parser.add_argument("--single-pass", action="store_true")
 
 

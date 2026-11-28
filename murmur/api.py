@@ -90,14 +90,16 @@ class Murmur:
                        and draft windows; it must match the server's MURMUR_DRAFT_DIR).
         diarize        diarize for chunk boundaries and speaker linking. pyannote on MLX downloads
                        public weights; on PyTorch it needs access to the gated upstream weights.
-        diarizer       "pyannote" (speaker-diarization-3.1) or, on the vLLM backend, "nemotron"
-                       (Nemotron-3-Diarization, faster, not gated; needs NeMo 3.1+, see NemotronDiarizer).
+        diarizer       "pyannote" (speaker-diarization-3.1) or, on MLX and vLLM, "nemotron"
+                       (public Nemotron-3-Diarization weights via mlx-audio on Mac or NeMo on vLLM).
         gpu_memory_utilization  share of the GPU the started server takes (default 0.70, leaving
                        room for pyannote and the draft model on the same GPU).
         """
         client_cls = get_model(model)
-        if diarize and diarizer != "pyannote" and backend != "vllm":
-            raise ValueError(f"diarizer={diarizer!r} is supported on the vLLM backend; use 'pyannote' with {backend}")
+        if diarize and diarizer not in ("pyannote", "nemotron"):
+            raise ValueError(f"unknown diarizer {diarizer!r}; choose 'pyannote' or 'nemotron'")
+        if diarize and diarizer == "nemotron" and backend in ("llama.cpp", "llama-cpp"):
+            raise ValueError(f"diarizer={diarizer!r} is supported on the MLX and vLLM backends; use 'pyannote' with {backend}")
         if backend in ("llama.cpp", "llama-cpp"):
             from .models.llama_cpp import llama_client
             from .server import LlamaServer
@@ -163,7 +165,10 @@ class Murmur:
                 from .drafting.whisper_drafts import MLXWhisperDrafter
                 drafter = MLXWhisperDrafter(language)
             mlx_diarizer = None
-            if diarize:
+            if diarize and diarizer == "nemotron":
+                from .diarization.nemotron_mlx import MLXNemotronDiarizer
+                mlx_diarizer = MLXNemotronDiarizer()
+            elif diarize:
                 from .diarization.mlx import MLXDiarizer
                 mlx_diarizer = MLXDiarizer(hf_token)
             return cls(client, chunk_s=chunk_s, batch_size=batch_size or 1, language=language,

@@ -156,7 +156,7 @@ def test_make_diarizer_names():
             make_diarizer("nemotron")
 
 
-@pytest.mark.parametrize("backend", ["mlx", "llama.cpp"])
-def test_nemotron_is_vllm_only(backend):
+@pytest.mark.parametrize("backend", ["llama.cpp", "llama-cpp"])
+def test_nemotron_unavailable_on_llama_cpp(backend):
     with pytest.raises(ValueError, match="vLLM backend"):
         Murmur.load("moss", backend=backend, diarizer="nemotron")
