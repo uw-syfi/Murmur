@@ -55,7 +55,7 @@ def timeline(activity, labels, speakers, duration, requested=None):
 
 class MLXDiarizer:
     """Pyannote segmentation-3.0 and WeSpeaker ResNet34-LM, both on MLX."""
-    segmentation_batch_size = 32
+    segmentation_batch_size = 96
     embedding_batch_size = 8
 
     def __init__(self, token=None, *, checkpoint=None):
