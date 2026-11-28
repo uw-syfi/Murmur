@@ -79,13 +79,15 @@ def main() -> None:
     ap.add_argument("--draft-dir", default=None, help="with --url and --system murmur: the server's draft dir")
     ap.add_argument("--gpu", default=None)
     ap.add_argument("--vllm-bin", default=None)
+    ap.add_argument("--diarizer", choices=["pyannote", "nemotron"], default="pyannote")
     ap.add_argument("--output", default=None, help="default: results/<model>/<dataset>/<system>_bs<N>_<mode>")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     for noisy in ("urllib3", "httpx"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
-    out = Path(a.output or HERE.parent / "results" / a.model / a.dataset / f"{a.system}_bs{a.batch_size}_{a.mode}")
+    out = Path(a.output or HERE.parent / "results" / a.model / a.dataset / f"{a.system}_bs{a.batch_size}_{a.mode}"
+               + (f"_{a.diarizer}" if a.diarizer != "pyannote" else ""))
     out.mkdir(parents=True, exist_ok=True)
     recs = D.load(a.dataset, a.meetings)
     lang = recs[0]["language"]
@@ -98,7 +100,8 @@ def main() -> None:
     m = Murmur.load(a.model, url=a.url, draft_dir=a.draft_dir, batch_size=1 if single and a.mode == "latency" else a.batch_size,
                     chunk_s=a.chunk_s, language=lang, gpu=a.gpu, vllm_bin=a.vllm_bin,
                     draft_windows=draft_windows, speculative="ngram" if a.system == "ngram" else None,
-                    diarize=not single or not client_cls.diarizes or bool(split), single_pass_server=single,
+                    diarize=not single or not client_cls.diarizes or bool(split), diarizer=a.diarizer,
+                    single_pass_server=single,
                     keep_failed_output=False)
     try:
         # warm-up, not timed
@@ -118,7 +121,8 @@ def main() -> None:
                 log.info("%s: %.1f s, %d chunks", r["id"], rows[-1][2], tr.stats["n_chunks"])
             wall = sum(x[2] for x in rows)
         else:
-            tls = None if single else diarization_cache(m, recs, HERE.parent / "results" / "diarization" / f"{a.dataset}.json")
+            cache = f"{a.dataset}.json" if a.diarizer == "pyannote" else f"{a.dataset}_{a.diarizer}.json"
+            tls = None if single else diarization_cache(m, recs, HERE.parent / "results" / "diarization" / cache)
             t0 = time.perf_counter()
             trs = m.transcribe_batch([r["wav"] for r in recs], single_pass=single, timelines=tls)
             wall = time.perf_counter() - t0
