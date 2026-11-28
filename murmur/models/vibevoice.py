@@ -218,9 +218,11 @@ def _prefill(model, audio):
     import mlx.core as mx
     from mlx_audio.lm.models.cache import make_prompt_cache
 
+    from .vibevoice_metal.encoder import encode_speech
+
     # Match mlx-audio's speech prompt and 2048-token prefill before verifying draft blocks.
     waveform = model._preprocess_audio(audio, sampling_rate=24_000)
-    speech = model.encode_speech(waveform)
+    speech = encode_speech(model, waveform)
     ids, mask = model._build_prompt_tokens(speech, waveform.shape[1] / 24_000)
     embeddings = model._merge_speech_text_embeddings(ids, speech, mask)
     lm = model.language_model
