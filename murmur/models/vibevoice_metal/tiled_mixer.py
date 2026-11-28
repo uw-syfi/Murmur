@@ -5,8 +5,8 @@ from functools import lru_cache
 import mlx.core as mx
 import mlx.nn as nn
 
-from .vibevoice_block_math import BLOCK_MATH
-from .vibevoice_wide_mixer import wide_mixer_kernel
+from .block_math import BLOCK_MATH
+from .wide_mixer import wide_mixer_kernel
 
 
 @lru_cache(maxsize=1)

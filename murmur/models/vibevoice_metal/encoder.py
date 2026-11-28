@@ -3,9 +3,9 @@ from functools import lru_cache
 
 import mlx.core as mx
 
-from .vibevoice_full_block import try_full_block
-from .vibevoice_ffn import try_fused_ffn
-from .vibevoice_tiled_mixer import try_tiled_mixer
+from .full_block import try_full_block
+from .ffn import try_fused_ffn
+from .tiled_mixer import try_tiled_mixer
 
 
 @lru_cache(maxsize=1)

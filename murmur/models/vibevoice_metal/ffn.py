@@ -4,7 +4,7 @@ from functools import lru_cache
 
 import mlx.core as mx
 
-from .vibevoice_block_math import BLOCK_MATH
+from .block_math import BLOCK_MATH
 
 
 # Same FP32 erf and expm1 implementations used by MLX GELU.

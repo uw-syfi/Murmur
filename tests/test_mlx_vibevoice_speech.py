@@ -9,7 +9,7 @@ encoder = pytest.importorskip("mlx_audio.stt.models.vibevoice_asr.audio_encoder"
 @pytest.mark.skipif(not mx.metal.is_available(), reason="requires Metal")
 @pytest.mark.parametrize("channels", [32, 64, 128, 256])
 def test_causal_block_matches_reference_across_tile_boundary(channels):
-    from murmur.models.vibevoice_speech import _block
+    from murmur.models.vibevoice_metal.encoder import _block
 
     mx.random.seed(17)
     block = encoder.Block1D(channels, layer_scale_init_value=1.0)

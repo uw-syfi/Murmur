@@ -5,9 +5,9 @@ from functools import lru_cache
 import mlx.core as mx
 import mlx.nn as nn
 
-from .vibevoice_block_math import BLOCK_MATH
-from .vibevoice_ffn import _ERF, _FFN_PROJECTIONS, _projection_weight
-from .vibevoice_tiled_mixer import _epsilons
+from .block_math import BLOCK_MATH
+from .ffn import _ERF, _FFN_PROJECTIONS, _projection_weight
+from .tiled_mixer import _epsilons
 
 
 @lru_cache(maxsize=1)
