@@ -25,6 +25,14 @@ def linkage(points):
     Other rows need just one comparison against the new centroid.
     """
     n = len(points)
+    # Use bounded host metadata and native GPU reductions for normalized
+    # speaker embeddings. Other devices, dtypes and sizes use the general path.
+    if (2 <= n <= 2048 and points.dtype == mx.float32 and 0 < points.shape[1] <= 512
+            and mx.default_device() == mx.Device(mx.gpu) and mx.metal.is_available()
+            and mx.device_info(mx.gpu)["device_name"].startswith("Apple M")
+            and (mx.abs(points) <= 2).all().item()):
+        from .metal.linkage import linkage as metal_linkage
+        return metal_linkage(points)
     points = points[:]  # Updates replace live centroids while preserving the input embeddings.
     ids = mx.arange(n)
     alive = mx.ones((n,), dtype=mx.bool_)

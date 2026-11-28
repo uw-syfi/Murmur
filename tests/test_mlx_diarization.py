@@ -40,6 +40,96 @@ def test_recurrence_with_saturated_gates(reverse):
     np.testing.assert_allclose(result, expected.numpy(), atol=1e-5)
 
 
+@pytest.mark.parametrize("channels", [64, 128])
+def test_wespeaker_single_column_convolution(channels):
+    from murmur.diarization.networks import WeSpeaker
+
+    rng = np.random.default_rng(17)
+    x = rng.normal(size=(1, 3, 1, channels)).astype(np.float32)
+    kernel = rng.normal(0, 0.05, size=(channels, 3, 3, channels)).astype(np.float32)
+    bias = rng.normal(size=channels).astype(np.float32)
+    residual = rng.normal(size=x.shape).astype(np.float32)
+    model = WeSpeaker({"conv.weight": mx.array(kernel), "conv.bias": mx.array(bias)})
+    actual = model.conv(mx.array(x), "conv", residual=mx.array(residual))
+
+    # Only the middle column of the filter overlaps this one-column input.
+    padded = np.pad(x[0, :, 0].astype(np.float64), ((1, 1), (0, 0)))
+    expected = sum(padded[row:row + 3] @ kernel[:, row, 1].astype(np.float64).T
+                   for row in range(3))
+    expected = np.maximum(expected[None, :, None, :] + bias + residual, 0)
+    assert actual.shape == x.shape
+    np.testing.assert_allclose(np.asarray(actual), expected, rtol=1e-5, atol=2e-6)
+
+
+@pytest.mark.parametrize(("channels", "with_residual"), [(32, False), (64, True)])
+def test_wespeaker_rectangular_convolution_partial_tiles(channels, with_residual):
+    from unittest.mock import patch
+    from murmur.diarization.metal import winograd_rect
+    from murmur.diarization.networks import WeSpeaker
+
+    if not mx.device_info(mx.gpu)["device_name"].startswith("Apple M"):
+        pytest.skip("rectangular convolution requires an Apple M GPU")
+
+    # Nine 2-by-4 tiles require a second threadgroup with one valid tile.
+    rng = np.random.default_rng(32)
+    x = rng.normal(size=(2, 5, 11, channels)).astype(np.float32)
+    kernel = rng.normal(0, 0.05, size=(channels, 3, 3, channels)).astype(np.float32)
+    bias = rng.normal(size=channels).astype(np.float32)
+    residual = rng.normal(size=x.shape).astype(np.float32) if with_residual else None
+    model = WeSpeaker({"conv.weight": mx.array(kernel), "conv.bias": mx.array(bias)})
+    with patch.object(winograd_rect, "convolution", wraps=winograd_rect.convolution) as routed:
+        actual = model.conv(mx.array(x), "conv", relu=True,
+                            residual=mx.array(residual) if with_residual else None)
+        mx.eval(actual)
+        routed.assert_called_once()
+
+    h, w = x.shape[1:3]
+    padded = np.pad(x.astype(np.float64), ((0, 0), (1, 1), (1, 1), (0, 0)))
+    expected = sum(padded[:, row:row + h, col:col + w] @ kernel[:, row, col].T
+                   for row in range(3) for col in range(3)) + bias
+    if with_residual:
+        expected += residual
+    assert actual.shape == x.shape
+    assert actual.dtype == mx.float32
+    np.testing.assert_allclose(np.asarray(actual), np.maximum(expected, 0), rtol=1e-5, atol=5e-6)
+
+
+def test_wespeaker_stem_odd_time_strip(monkeypatch):
+    from murmur.diarization.networks import WeSpeaker
+
+    if not mx.device_info(mx.gpu)["device_name"].startswith("Apple M"):
+        pytest.skip("fused stem requires an Apple M GPU")
+
+    # Seven frames span one full strip and a final three-frame strip.
+    rng = np.random.default_rng(40)
+    audio = mx.array(rng.normal(size=(2, 400 + 6 * 160)).astype(np.float32))
+    kernel = rng.normal(0, 0.2, size=(32, 3, 3, 1)).astype(np.float32)
+    bias = rng.normal(size=32).astype(np.float32)
+    model = WeSpeaker({"conv1.weight": mx.array(kernel), "conv1.bias": mx.array(bias)})
+
+    # Capture the actual tensor passed from the production stem to ResNet.
+    class ReachedResidualBlock(Exception):
+        pass
+
+    def capture(activation, name, *args, **kwargs):
+        assert name == "layer1.0.conv1"
+        raise ReachedResidualBlock(activation)
+
+    monkeypatch.setattr(model, "conv", capture)
+    with pytest.raises(ReachedResidualBlock) as captured:
+        model(audio, None)
+    actual = captured.value.args[0]
+
+    features = np.asarray(model.features(audio)).transpose(0, 2, 1).astype(np.float64)
+    batch, bands, steps = features.shape
+    padded = np.pad(features, ((0, 0), (1, 1), (1, 1)))
+    expected = sum(padded[:, row:row + bands, col:col + steps, None] * kernel[:, row, col, 0]
+                   for row in range(3) for col in range(3)) + bias
+    assert actual.shape == (batch, bands, steps, 32)
+    assert actual.dtype == mx.float32
+    np.testing.assert_allclose(np.asarray(actual), np.maximum(expected, 0), rtol=1e-5, atol=3e-6)
+
+
 def test_centroid_linkage_matches_scipy():
     from scipy.cluster.hierarchy import linkage as reference
     from murmur.diarization.clustering import linkage, unit
@@ -50,6 +140,7 @@ def test_centroid_linkage_matches_scipy():
     children, heights, sizes, _ = linkage(points)
     np.testing.assert_array_equal(children, expected[:, :2])
     np.testing.assert_allclose(heights, expected[:, 2], atol=1e-5)
+    assert sizes.dtype == mx.int32
     np.testing.assert_array_equal(sizes[len(points):], expected[:, 3])
 
 
