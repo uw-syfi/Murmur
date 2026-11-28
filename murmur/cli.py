@@ -41,7 +41,7 @@ def _load_pipeline(a):
                        backend=a.backend, checkpoint=a.checkpoint, quantization=a.quantization,
                        mmproj=a.mmproj, llama_bin=a.llama_bin, served_name=a.served_name, cpu_only=a.cpu_only,
                        single_pass_server=a.single_pass and a.backend in ("llama.cpp", "llama-cpp"),
-                       language=a.language, gpu=a.gpu, diarize=not a.no_diarize,
+                       language=a.language, gpu=a.gpu, diarize=not a.no_diarize, diarizer=a.diarizer,
                        draft_windows=None if a.draft_windows == "auto" else a.draft_windows == "on")
 
 
@@ -92,6 +92,8 @@ def _add_pipeline_options(parser):
     parser.add_argument("--language", default="en", choices=["en", "zh"])
     parser.add_argument("--gpu", default=None)
     parser.add_argument("--no-diarize", action="store_true")
+    parser.add_argument("--diarizer", choices=["pyannote", "nemotron"], default="pyannote",
+                        help="nemotron: Nemotron-3-Diarization, on MLX (mlx-audio) or vLLM (NeMo 3.1+)")
     parser.add_argument("--single-pass", action="store_true")
 
 

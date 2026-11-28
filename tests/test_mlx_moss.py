@@ -19,6 +19,15 @@ def test_mlx_transcription_loads_native_diarizer(monkeypatch):
     diarizer.assert_called_once_with("test")
 
 
+def test_mlx_selects_nemotron_diarizer(monkeypatch):
+    diarizer = Mock()
+    monkeypatch.setitem(sys.modules, "murmur.diarization.nemotron_mlx", SimpleNamespace(MLXNemotronDiarizer=diarizer))
+    monkeypatch.setitem(sys.modules, "moss_transcribe_diarize.mlx", SimpleNamespace(load_model=Mock()))
+    with Murmur.load("moss", backend="mlx", diarizer="nemotron") as pipeline:
+        assert pipeline.diarizer is diarizer.return_value
+    diarizer.assert_called_once_with()
+
+
 def test_mlx_transcribes_chunks_with_one_unquantized_model(monkeypatch):
     generate = Mock(return_value=SimpleNamespace(text="[0.00][S01]hello[0.50]"))
     loader = Mock(return_value=SimpleNamespace(generate=generate))

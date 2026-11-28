@@ -23,6 +23,15 @@ in your shell to a Hugging Face read token with access to both models.
 With pyannote.audio 4.1.1, also accept the [Community-1 terms](https://huggingface.co/pyannote/speaker-diarization-community-1)
 for the files that version downloads during setup.
 
+To diarize with [Nemotron-3-Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization)
+instead (`diarizer="nemotron"`, CLI `--diarizer nemotron`), install NeMo 3.1 or newer, which is
+not on PyPI yet (3.0.0 cannot load the model). The model is not gated, so it needs no token.
+NeMo installs next to pyannote (it downgrades `lightning` to 2.4, which pyannote supports).
+
+```bash
+python -m pip install "nemo-toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git"
+```
+
 ## Install the MOSS server and transcribe a file
 
 Run these commands from the Murmur checkout in the same shell. The project tested

@@ -98,9 +98,10 @@ A single pass over a model's max audio length is split into the fewest pieces th
 | Speaker diarization pipeline | [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) |
 | Speaker segmentation | [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) |
 | Speaker embeddings | [pyannote/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM) |
+| Faster speaker diarization (optional, MLX and vLLM, `--diarizer nemotron`) | [nvidia/Nemotron-3-Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization) |
 
 A standalone Mac prototype also tests Reverb Diarization V1 (INT8) segmentation with NeMo TitaNet Small
-embeddings; the CLI and Python API use pyannote. [Prototype benchmark](docs/benchmarks/reverb-mlx.md)
+embeddings; the CLI and Python API default to pyannote. [Prototype benchmark](docs/benchmarks/reverb-mlx.md)
 
 ## Benchmarks
 

@@ -47,6 +47,12 @@ On an M4 Max, MLX diarized the 17.5-minute AMI ES2004a meeting in 18.74 s on the
 and 17.79 s on the distant mic. PyTorch MPS took 46.94 s and 46.93 s, respectively, with matching
 speaker turns. [Benchmark and scoring details](../benchmarks/pyannote-mac.md)
 
+Install the optional Nemotron runtime with `uv pip install -e '.[mlx-nemotron]'` (Python 3.11+).
+Select Nemotron-3 with `--diarizer nemotron` or `Murmur.load(..., backend="mlx", diarizer="nemotron")`.
+Murmur downloads the converted weights on first use and runs the eight-speaker Sortformer through
+mlx-audio. It infers the speaker count and joins pauses shorter than half a second for each speaker.
+[MLX checkpoint](https://huggingface.co/mlx-community/Nemotron-3-Diarization) · [Mac benchmark](../benchmarks/nemotron-mlx.md)
+
 A separate benchmark runs Reverb INT8 segmentation and TitaNet Small embeddings on the Apple GPU.
 Feature extraction and clustering run on the CPU. [Experimental setup and accuracy](../benchmarks/reverb-mlx.md)
 
