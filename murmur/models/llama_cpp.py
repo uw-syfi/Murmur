@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import math
 from functools import cached_property
 
 import requests
@@ -11,11 +12,51 @@ from .vibevoice import SHOW_KEYS, VibeVoiceClient, _wav_bytes
 from .voxtral import VoxtralClient, VoxtralSmallClient
 
 
-class LlamaVibeVoiceClient(VibeVoiceClient):
+class LlamaContext:
+    """Size each llama-server slot for the longest audio one request carries.
+
+    A slot holds the prompt, the audio embeddings and the output budget. Sizing it for a
+    target chunk instead of the model's longest single pass saves gigabytes of KV cache on
+    laptops. ``context_s`` is the audio length the server was sized for (None for a
+    server Murmur did not start, whose size it cannot know).
+    """
+    audio_tokens_per_s: float
+    prompt_tokens = 512
+    context_s: float | None = None
+
+    @classmethod
+    def output_tokens(cls, audio_s: float) -> int:
+        return cls.budget_for(audio_s)
+
+    @classmethod
+    def context_for(cls, audio_s: float) -> int:
+        need = cls.prompt_tokens + math.ceil(audio_s * cls.audio_tokens_per_s) + cls.output_tokens(audio_s)
+        return 1024 * math.ceil(need / 1024)
+
+    def _check_length(self, audio):
+        duration = len(audio) / self.sample_rate
+        if self.context_s is not None and duration > self.context_s + 1.0:
+            raise ValueError(f"{duration:.0f} s of audio does not fit a llama.cpp server sized for {self.context_s:.0f} s "
+                             "chunks; start it with single_pass_server=True (CLI: --single-pass) for single passes")
+
+
+class LlamaVibeVoiceClient(LlamaContext, VibeVoiceClient):
     gguf_repo = "ggml-org/VibeVoice-ASR-GGUF"
-    context_per_slot = 65536
+    audio_tokens_per_s = 7.5  # measured about 6.9 per second of audio, plus margin
+    # Normal output is about 5 tokens per second of audio. vLLM allows 100 per second (32k for
+    # a 330 s chunk) to let repetition loops run out; at laptop speed such a loop would decode
+    # for half an hour, so llama.cpp stops one at 25 per second (about 8k tokens per chunk).
+    output_tokens_per_s = 25
+
+    @classmethod
+    def budget_for(cls, audio_s):
+        return min(cls.max_new_tokens, max(256, int(audio_s * cls.output_tokens_per_s)))
+
+    def budget(self, audio):
+        return self.budget_for(len(audio) / self.sample_rate)
 
     def _post(self, audio, max_tokens, headers):
+        self._check_length(audio)
         encoded = base64.b64encode(_wav_bytes(audio, self.sample_rate)).decode("ascii")
         duration = len(audio) / self.sample_rate
         prompt = f"This is a {duration:.2f} seconds audio, please transcribe it with these keys: " + ", ".join(SHOW_KEYS)
@@ -34,9 +75,13 @@ class LlamaVibeVoiceClient(VibeVoiceClient):
         return choice["message"].get("content") or "", choice.get("finish_reason")
 
 
-class LlamaVoxtralClient(VoxtralClient):
+class LlamaVoxtralClient(LlamaContext, VoxtralClient):
     gguf_repo = "ggml-org/Voxtral-Mini-3B-2507-GGUF"
-    context_per_slot = 32768
+    audio_tokens_per_s = 7.5  # measured about 5.6 per second of audio, plus margin
+
+    @classmethod
+    def budget_for(cls, audio_s):
+        return int(audio_s * cls.tokens_per_s) + cls.min_tokens
 
     @cached_property
     def media_marker(self):
@@ -49,6 +94,7 @@ class LlamaVoxtralClient(VoxtralClient):
         return marker
 
     def _post(self, audio, max_tokens, headers):
+        self._check_length(audio)
         # Mistral's transcription mode places the language and [TRANSCRIBE] after [/INST].
         # libmtmd supplies [BEGIN_AUDIO] when replacing the marker with the audio embeddings.
         prompt = f"[INST]{self.media_marker}[/INST]lang:{self.language}[TRANSCRIBE]"

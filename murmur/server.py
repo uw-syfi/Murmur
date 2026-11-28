@@ -154,8 +154,12 @@ class VLLMServer(ManagedServer):
 
 
 def llama_server_command(client, *, port, batch_size=1, checkpoint=None, mmproj=None, llama_bin=None, served_name=None,
-                        cpu_only=False):
-    """Build a stock llama-server command with one audio context per parallel slot."""
+                        cpu_only=False, context_s=330.0):
+    """Build a stock llama-server command with one audio context per parallel slot.
+
+    Each slot is sized for ``context_s`` seconds of audio: a target chunk by default, or the
+    model's longest single pass (``client.max_audio_s``).
+    """
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
     target = str(checkpoint or client.gguf_repo)
@@ -170,13 +174,15 @@ def llama_server_command(client, *, port, batch_size=1, checkpoint=None, mmproj=
                  "--no-kv-offload", "--no-op-offload"] if cpu_only else []
     return [str(llama_bin or os.environ.get("MURMUR_LLAMA_SERVER") or "llama-server"), *weights,
             "--host", "127.0.0.1", "--port", str(port), "--alias", served_name or client.name, "--jinja",
-            "--parallel", str(batch_size), "--ctx-size", str(client.context_per_slot * batch_size), *cpu_flags]
+            "--parallel", str(batch_size), "--ctx-size", str(client.context_for(context_s) * batch_size), *cpu_flags]
 
 
 class LlamaServer(ManagedServer):
-    def __init__(self, client, *, batch_size, checkpoint, mmproj, llama_bin, log_path, served_name=None, cpu_only=False):
+    def __init__(self, client, *, batch_size, checkpoint, mmproj, llama_bin, log_path, served_name=None, cpu_only=False,
+                 context_s=330.0):
         self.port = free_port()
         self.url = f"http://127.0.0.1:{self.port}"
         cmd = llama_server_command(client, port=self.port, batch_size=batch_size, checkpoint=checkpoint,
-                                   mmproj=mmproj, llama_bin=llama_bin, served_name=served_name, cpu_only=cpu_only)
+                                   mmproj=mmproj, llama_bin=llama_bin, served_name=served_name, cpu_only=cpu_only,
+                                   context_s=context_s)
         self._start("llama_cpp", cmd, os.environ.copy(), log_path, 1800.0)
