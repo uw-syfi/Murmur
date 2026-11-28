@@ -1,4 +1,4 @@
-"""Audio loading, pyannote diarization, and target-chunk boundaries."""
+"""Audio loading, diarization (pyannote or Nemotron), and target-chunk boundaries."""
 
 from __future__ import annotations
 
@@ -64,6 +64,8 @@ class Diarizer:
     Needs ``pyannote.audio`` and a Hugging Face token with access to the gated pyannote models.
     """
 
+    min_speakers_hint = True  # takes ``min_speakers`` (the pipeline re-diarizes with the model's count)
+
     def __init__(self, token: str | None = None, device: str | None = None):
         from pyannote.audio import Pipeline
         tok = hf_token(token)
@@ -105,6 +107,80 @@ class Diarizer:
                                                       or next(iter(vars(raw).values())))
         return [(float(t.start), float(t.end), str(spk)) for t, _, spk in ann.itertracks(yield_label=True)]
 
+
+PyannoteDiarizer = Diarizer
+
+
+def merge_same_speaker(tl: Timeline, gap_s: float) -> Timeline:
+    """Join each speaker's segments separated by less than ``gap_s`` (short pauses within a turn)."""
+    out = []
+    for spk in sorted({t[2] for t in tl}):
+        cur = None
+        for s, e, k in sorted(t for t in tl if t[2] == spk):
+            if cur is not None and s - cur[1] < gap_s:
+                cur[1] = max(cur[1], e)
+            else:
+                if cur is not None:
+                    out.append(tuple(cur))
+                cur = [s, e, k]
+        if cur is not None:
+            out.append(tuple(cur))
+    return sorted(out)
+
+
+class NemotronDiarizer:
+    """NVIDIA Nemotron-3-Diarization (100M Sortformer, up to 4 speakers), a faster alternative to pyannote.
+
+    Needs NeMo 3.1 or newer, which is not on PyPI yet (3.0.0 cannot load the model)::
+
+        pip install "nemo-toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git"
+
+    The model is not gated (OpenMDW-1.1 license), so no Hugging Face token is needed. Its
+    segments are fine-grained, so each speaker's pauses shorter than ``merge_gap_s`` are joined;
+    otherwise target-chunk cuts land inside utterances more often. It takes no speaker-count
+    hint, so the pipeline does not re-diarize.
+    """
+
+    min_speakers_hint = False
+    MODEL = "nvidia/Nemotron-3-Diarization"
+
+    def __init__(self, device: str | None = None, merge_gap_s: float = 0.5, batch_size: int = 8):
+        try:
+            from nemo.collections.asr.models import SortformerEncLabelModel
+        except ImportError as e:
+            raise RuntimeError("diarizer='nemotron' needs NeMo 3.1+: pip install "
+                               "\"nemo-toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git\"") from e
+        dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        try:
+            self.model = SortformerEncLabelModel.from_pretrained(self.MODEL).eval().to(dev)
+        except Exception as e:
+            if "rope" in str(e).lower():
+                raise RuntimeError(f"{self.MODEL} needs NeMo 3.1+ (RoPE attention); PyPI's nemo-toolkit 3.0.0 "
+                                   "cannot load it: pip install \"nemo-toolkit[asr] @ "
+                                   "git+https://github.com/NVIDIA/NeMo.git\"") from e
+            raise
+        self.device, self.merge_gap_s, self.batch_size = dev, merge_gap_s, batch_size
+        self._lock = threading.Lock()
+
+    def __call__(self, wav16: torch.Tensor, min_speakers: int | None = None) -> Timeline:
+        audio = [wav16.detach().cpu().numpy().astype(np.float32)]
+        with self._lock, torch.inference_mode(), \
+                torch.autocast(self.device.type, dtype=torch.bfloat16, enabled=self.device.type == "cuda"):
+            out = self.model.diarize(audio=audio, sample_rate=SR, batch_size=self.batch_size, verbose=False)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()  # the vLLM server shares this GPU
+        lines = out[0] if out and isinstance(out[0], list) else out
+        tl = sorted((float(p[0]), float(p[1]), str(p[2])) for p in (str(x).split() for x in lines) if len(p) == 3)
+        return merge_same_speaker(tl, self.merge_gap_s) if self.merge_gap_s else tl
+
+
+def make_diarizer(name: str = "pyannote", hf_token_: str | None = None, device: str | None = None):
+    """A diarizer by name: "pyannote" (default) or "nemotron"."""
+    if name == "pyannote":
+        return Diarizer(hf_token_, device=device)
+    if name == "nemotron":
+        return NemotronDiarizer(device=device)
+    raise ValueError(f"unknown diarizer {name!r}; choose 'pyannote' or 'nemotron'")
 
 def chunk_bounds(duration_s: float, chunk_s: float, timeline: Timeline | None) -> list[tuple[float, float]]:
     """Target chunks of at most ``chunk_s`` seconds, cut between speech regions.

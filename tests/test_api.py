@@ -116,3 +116,47 @@ def test_parse_stm_keeps_the_first_word(tmp_path):
                  "m 1 B 2.000 3.000 <o,f0,male> Yes, we do\n"     # with a label field
                  "m 1 B 3.000 4.000 okay\n")
     assert [s["Content"] for s in parse_stm(f)] == ["i think so", "yes we do", "okay"]
+
+
+class CountingDiarizer:
+    """One speaker everywhere; records each call's min_speakers."""
+
+    def __init__(self, hint):
+        self.min_speakers_hint, self.calls = hint, []
+
+    def __call__(self, wav16, min_speakers=None):
+        self.calls.append(min_speakers)
+        return [(0.0, 20.0, "A"), (25.0, 45.0, "A")]
+
+
+@pytest.mark.parametrize("hint, expected", [(True, [None, 2]), (False, [None])])
+def test_rediarization_only_for_diarizers_that_take_a_speaker_hint(hint, expected):
+    """pyannote is re-run with the model's speaker count; Nemotron takes no hint, so it runs once."""
+    d = CountingDiarizer(hint)
+    m = Murmur(FakeVibeVoice(), chunk_s=20.0, batch_size=2, diarizer=d)
+    m.transcribe(np.zeros(SR * 50, dtype=np.float32), sr=SR)
+    assert d.calls == expected
+
+
+def test_merge_same_speaker_joins_short_pauses_per_speaker():
+    from murmur.audio import merge_same_speaker
+    tl = [(0.0, 1.0, "A"), (1.3, 2.0, "A"), (1.5, 1.8, "B"), (2.6, 3.0, "A"), (3.2, 4.0, "B")]
+    assert merge_same_speaker(tl, 0.5) == [(0.0, 2.0, "A"), (1.5, 1.8, "B"), (2.6, 3.0, "A"), (3.2, 4.0, "B")]
+    assert merge_same_speaker(tl, 0.7) == [(0.0, 3.0, "A"), (1.5, 1.8, "B"), (3.2, 4.0, "B")]
+
+
+def test_make_diarizer_names():
+    from murmur.audio import make_diarizer
+    with pytest.raises(ValueError, match="unknown diarizer"):
+        make_diarizer("whisperx")
+    try:
+        import nemo  # noqa: F401
+    except ImportError:
+        with pytest.raises(RuntimeError, match="NeMo 3.1"):
+            make_diarizer("nemotron")
+
+
+@pytest.mark.parametrize("backend", ["mlx", "llama.cpp"])
+def test_nemotron_is_vllm_only(backend):
+    with pytest.raises(ValueError, match="vLLM backend"):
+        Murmur.load("moss", backend=backend, diarizer="nemotron")
